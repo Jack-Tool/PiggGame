@@ -1,0 +1,192 @@
+(function () {
+    // spg.getEnvDomainで使用するマップ
+    var environmentDomainMap = {
+        "s.semi.pigg.ameba.jp": {
+            "spsns-api.pigg.ameba.jp": "spsns-api.semi.pigg.ameba.jp",
+            "contents.pigg.ameba.jp": "contents.semi.pigg.ameba.jp",
+            "helps.ameba.jp": "helps.ameba.jp",
+            "common.s.pigg.ameba.jp": "common.s.pigg.ameba.jp",
+            "fishing.pigg.ameba.jp": "fishing.semi.pigg.ameba.jp",
+            "casino.pigg.ameba.jp": "casino.semi.pigg.ameba.jp",
+            "puzzle.pigg.ameba.jp": "puzzle.semi.pigg.ameba.jp",
+            "d-money.jp": "d-money.jp",
+            "www.ameba.jp": "www.ameba.jp"
+        },
+        "dev-s.pigg.ameba.jp": {
+            "spsns-api.pigg.ameba.jp": "dev-spsns-api.pigg.ameba.jp",
+            "contents.pigg.ameba.jp": "dev-contents.pigg.ameba.jp",
+            "helps.ameba.jp": "dev.helps.ameba.jp",
+            "common.s.pigg.ameba.jp": "dev-common-s.pigg.ameba.jp",
+            "fishing.pigg.ameba.jp": "dev-fishing.pigg.ameba.jp",
+            "casino.pigg.ameba.jp": "dev-casino.pigg.ameba.jp",
+            "puzzle.pigg.ameba.jp": "dev-puzzle.pigg.ameba.jp",
+            "pet.pigg.ameba.jp": "dev-pet.pigg.ameba.jp",
+            "pet-api.pigg.ameba.jp": "dev-pet-api.pigg.ameba.jp",
+            "d-money.jp": "sb.d-money.jp",
+            "www.ameba.jp": "sbx-www.ameba.jp"
+        },
+        "stg-s.pigg.ameba.jp": {
+            "spsns-api.pigg.ameba.jp": "stg-spsns-api.pigg.ameba.jp",
+            "contents.pigg.ameba.jp": "stg-contents.pigg.ameba.jp",
+            "helps.ameba.jp": "stg.helps.ameba.jp",
+            "common.s.pigg.ameba.jp": "stg-common-s.pigg.ameba.jp",
+            "fishing.pigg.ameba.jp": "stg-fishing.pigg.ameba.jp",
+            "casino.pigg.ameba.jp": "stg-casino.pigg.ameba.jp",
+            "puzzle.pigg.ameba.jp": "stg-puzzle.pigg.ameba.jp",
+            "pet.pigg.ameba.jp": "stg-pet.pigg.ameba.jp",
+            "pet-api.pigg.ameba.jp": "stg-pet-api.pigg.ameba.jp",
+            "d-money.jp": "sb.d-money.jp",
+            "www.ameba.jp": "sbx-www.ameba.jp"
+        }
+    };
+    //環境ごとに異なる定数等を渡す時に使う
+    var environmentFixedValMap = {
+        "dev-s.pigg.ameba.jp": {
+            "appId": 7560949
+        },
+        "stg-s.pigg.ameba.jp": {
+            "appId": 15304253
+        },
+        "s.semi.pigg.ameba.jp": {
+            "appId": 9409332
+        },
+        "s.pigg.ameba.jp": {
+            "appId": 9409332
+        },
+        "dev-puzzle.pigg.ameba.jp": {
+            "appId": 7560949
+        },
+        "stg-puzzle.pigg.ameba.jp": {
+            "appId": 15304253
+        },
+        "puzzle.semi.pigg.ameba.jp": {
+            "appId": 9409332
+        },
+        "puzzle.pigg.ameba.jp": {
+            "appId": 9409332
+        },
+        "dev-s.pigg.ameba.jp": {
+            "appId": 7560949
+        },
+        "dev-puzzle.pigg.ameba.jp": {
+            "appId": 7560949
+        }
+    };
+
+    var spg = {
+        /**
+         * @param {String} originalDomain 本番環境での接続先
+         * @returns {String} 現在の環境での接続先 (マッピングされていない場合は引数ママ)
+         */
+        getEnvDomain: function (originalDomain) {
+            var map = environmentDomainMap[location.host];
+            if (!map || !map[originalDomain]) {
+                return originalDomain;
+            } else {
+                return map[originalDomain];
+            }
+        },
+        getEnvFixedVal: function (val) {
+            var envMap = environmentFixedValMap[location.host];
+            return envMap[val];
+        },
+        getSafeLocationHref: function () {
+            return location.protocol + "//" + location.host + location.pathname + location.search + location.hash;
+        },
+        getScrollTop: function () {
+            return (document.documentElement.scrollTop || document.body.scrollTop);
+        },
+        /**
+         * @param code {String}
+         * @returns {number} 0=地面 1=空中
+         */
+        getPiggmeViewType: function (url, onFunc) {
+            var oReq = new XMLHttpRequest();
+            oReq.open("GET", url, true);
+            oReq.responseType = "arraybuffer";
+            oReq.onload = function (oEvent) {
+                var arrayBuffer = oReq.response;
+                if (arrayBuffer) {
+                    var pp = new amb.pigg.sp.PngParser(arrayBuffer);
+                    var posTxt = pp.showText().slice(4).split(",");
+                    var res = (Number(posTxt[1]) < -200) ? 1 : 0;
+                    onFunc(res);
+                    return res;
+                }
+            }
+            oReq.send(null);
+        },
+
+        /**
+         * @param (userId,coordinateId,action,scale[,direction,shadow,dataType,idType])
+         *          -userId : String  取得したいユーザのピグコード
+         *          -coordinateId : Num  取得したいコーディネイトコード
+         *          -scale : Num  画像サイズ 286
+         *          -action : String  取得したいコーディネイトのアクション ( default, pose_joy,(glad) pose_hi, angry, sad, glad, sad, think )
+         *          -direction : String  ピグの向き FL or FR
+         *          -shadow : Boolean  影の有無　true or false
+         *          -idType : String  useridの種類  ('PIGG_CODE','USER_CODE','AMEBA_ID','AS_ID')
+         *          -dataType : String  画像のタイプ  png or gif
+         * @returns {String} 画像URL
+         *          http://contents.dev.pigg.ameba.jp/api/0/user/${userId}/coordinate/${coordinateId}/image?idtype=PIGG_CODE&scale=286&type=png&direction=FL&action=pose_hi&shadow=true
+         */
+
+        getCoordinateUrl: function (obj) {
+            var actions = ["default", "pose_joy", "glad", "pose_hi", "angry", "sad", "glad", "sad", "think"],
+                idTypes = ["PIGG_CODE", "USER_CODE", "AMEBA_ID", "AS_ID"],
+                setting = obj,
+                check;
+
+            var checker = function () {
+                if (typeof setting.userId !== "string" || setting.userId === "")
+                    return "userId";
+                if (typeof setting.coordinateId !== "number")
+                    return "coordinateId";
+                if (typeof setting.scale !== "number" || !(setting.scale === 286))
+                    return "scale";
+                if (typeof setting.action !== "string" || setting.action === "" || actions.indexOf(setting.action) < 0)
+                    return "action";
+
+                if (setting.direction === void 0) {
+                    setting.direction = "FL";
+                } else {
+                    if (!(setting.direction === "FL" || setting.direction === "FR"))
+                        return "direction";
+                }
+
+                if (setting.shadow === void 0) {
+                    setting.shadow = true;
+                } else {
+                    if (typeof setting.shadow !== "boolean")
+                        return "shadow";
+                }
+
+                if (setting.idType === void 0) {
+                    setting.idType = "PIGG_CODE";
+                } else {
+                    if (idTypes.indexOf(setting.idType) < 0)
+                        return "idType";
+                }
+
+                if (setting.dataType === void 0) {
+                    setting.dataType = "png";
+                } else {
+                    if (!(setting.dataType === "png" || setting.dataType === "gif"))
+                        return "dataType";
+                }
+                return true;
+            }
+
+            check = checker();
+            if (check !== true) {
+                console.error("window.spg.getCoordinateUrl: ReferenceError because " + check + " is false.")
+                return false;
+            }
+
+            return "//" + this.getEnvDomain("contents.pigg.ameba.jp") + "/api/0/user/" + setting.userId + "/coordinate/" + setting.coordinateId + "/image?idtype=" + setting.idType + "&scale=" + setting.scale + "&type=" + setting.dataType + "&direction=" + setting.direction + "&action=" + setting.action + "&shadow=" + setting.shadow;
+        }
+
+    };
+
+    window.spg = spg;
+})();

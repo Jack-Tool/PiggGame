@@ -1,0 +1,769 @@
+/**
+ * @fileoverview ピグ本体に関する処理をする
+ * avatarModel, avatarView
+ */
+
+(function($){
+
+    /** @type {window.app} */
+    var app = window.app;
+
+    /**
+     * @class Avatar Model
+     * @type {Object}
+     */
+    app.model.avatar = Class.create({
+
+        initialize: function(){
+
+            /** @type {app.config} */
+            this.config = app.config;
+
+            /** @type {app.options} */
+            this.options = app.options;
+
+            /** @type {number} */
+            this.wearTotal = this.options.wearTotal; //使用中アイテムの総数
+
+            /** @type {Object.<string, Object>} */
+            this.underwear = {};//下着
+
+            /** @type {string} */
+            this.direction = this.options.direction;//ピグの向き
+
+            this.hidePartsList = [];
+
+            this.firstWearingItems = [];
+
+            this.removedFirstWearingItemNames = [];
+
+            delete this.options.query.limit;
+        },
+
+        clearCache : function(){
+            app.util.removeCache(this.config.piggCode + '.dressuptime');
+            app.util.removeCache(this.config.piggCode + '.facechangetime');
+            app.util.removeCache(this.config.piggCode + '.makeuptime');
+            app.util.removeCache(this.config.piggCode + '.json.bodyCosme');
+            app.util.removeCache(this.config.piggCode + '.json.under');
+        },
+
+        /**
+         * ステータスJSON読み込み
+         * @returns {Object} jQuery.ajax
+         */
+        loadState : function (){
+            /** @type {Object} */
+            var self = this;
+
+            /** @type {Object} */
+            var defer = $.Deferred();
+
+            if(navigator.onLine){
+
+                $.ajax($.extend(true,
+                    {
+                        url:this.options.ajax.host + 'api/dressup/cosmetic/status',
+                        success:function(state){
+                            app.util.saveCache(self.config.piggCode + '.makeuptime', $.now());
+                            return defer.resolve(state);
+
+                        },
+
+                        error:function(){
+                            return defer.reject();
+                        }
+                    },
+                       this.options.ajax)
+                );
+
+            }
+            else
+            {
+                return defer.reject();
+            }
+
+            return defer.promise();
+        },
+
+        /**
+         * ピグの身体JSONの読み込み
+         * @param {Object} state loadState JSON
+         * @return {Object} jQuery Deferred Object
+         */
+        loadBodyData : function(state){
+            /** @type {Object} */
+            var defer = $.Deferred();
+
+            /** @type {Object} */
+            var self = this;
+
+            /** @type {(string|Object)} */
+            var lastAccess = Number(app.util.loadCache(this.config.piggCode + '.lastaccessCosme'));
+
+            /** @type {(string|Object)} */
+            var dressupTime = app.util.loadCache(this.config.piggCode + '.dressuptime');
+
+            /** @type {(string|Object)} */
+            var bodyCache = app.util.loadCache(this.config.piggCode + '.json.bodyCosme');
+
+            /** @type {(string|Object)} */
+            var underCache = app.util.loadCache(this.config.piggCode + '.json.under');
+
+            if
+            (
+                navigator.onLine &&
+                (
+                    dressupTime > lastAccess ||
+                    state.facechangetime > lastAccess ||
+                    !bodyCache ||
+                    !underCache
+                )
+            )
+            {
+                // 前回アクセス時間後に顔変更された or キャッシュがない
+                $.ajax($.extend(true, {
+                    url:this.options.ajax.host + 'api/dressup/body?noMakeup=true',
+                    data:$.extend(true, this.options.query, {'expression':'default'}),
+
+                    /** @param data {body:Array, underwear:Array, cosme:Array} */
+                    success:function(data){
+                        app.util.saveCache(self.config.piggCode + '.json.bodyCosme', JSON.stringify(data.body));
+
+                        self.loadCosmeData(state).pipe(
+                            function(cosmeItems){
+                                return defer.resolve( data.body, data.underwear, cosmeItems, false );
+                            },
+                            function(e){
+                                return defer.reject();
+                            }
+                        )
+                    },
+
+                    error:function (){
+                        if (bodyCache && underCache)
+                        {
+
+                            bodyCache = $.parseJSON(bodyCache);
+                            underCache = $.parseJSON(underCache);
+
+                            app.util.createPopup('読み込みに失敗したため自動保存されたコーディネートを着用しています。<br />しばらく時間を置いて再読み込みしてください。', 'hide');
+
+                            self.loadCosmeData(state).pipe(
+                                function(cosmeItems){
+                                    return defer.resolve( bodyCache, underCache, cosmeItems, false );
+                                },
+                                function(e){
+                                    return defer.reject();
+                                }
+                            )
+                        }
+                        else
+                        {
+                            return defer.reject();
+                        }
+                        return defer.reject();
+                    }
+                }, this.options.ajax));
+
+            }
+            else if
+            (
+                (state.facechangetime < lastAccess || !state.facechangetime && !lastAccess) &&
+                (typeof bodyCache === 'string') &&
+                (typeof underCache === 'string')
+            )
+            {
+                bodyCache = $.parseJSON(bodyCache);
+                underCache = $.parseJSON(underCache);
+
+                self.loadCosmeData(state).pipe(
+                    function(cosmeItems){
+                        return defer.resolve( bodyCache, underCache, cosmeItems, false );
+                    },
+                    function(e){
+                        return defer.reject();
+                    }
+                )
+            }
+            else
+            {
+                return defer.reject();
+            }
+
+            return defer.promise();
+        },
+
+        /**
+         * 着用済みコスメパーツデータの読み込み
+         * @return {Object} jQuery Deferred Object
+         */
+        loadCosmeData:function(state) {
+            /** @type {Object} */
+            var defer = $.Deferred();
+
+            /** @type {Object} */
+            var self = this;
+            if (!self.wearingCosmeImageData)
+                self.wearingCosmeImageData = {};
+
+            $.ajax($.extend(true, {
+                url:self.options.ajax.host + 'api/dressup/cosmetic/wearingParts',
+                data:$.extend(true, self.options.query, {'expression':'default'}),
+
+                success:function(data){
+                    var i,
+                        len = data.items.length;
+
+                    // 詳細データとマージする為に画像データを保持
+                    for (i = 0; len > i; i++)
+                    {
+                        self.wearingCosmeImageData[data.items[i].code] = data.items[i].image;
+                    }
+                    // 最初に着用していたコスメを保存
+                    for (i = 0; len > i; i++)
+                    {
+                        self.firstWearingItems.push(data.items[i].code);
+                    }
+                    return defer.resolve(data.items);
+                },
+
+                error:function (){
+                    app.util.createPopup('コスメの読み込みに失敗しました。<br />しばらく時間を置いて再読み込みしてください。', 'reload');
+                    return defer.reject();
+                }
+            }, self.options.ajax));
+
+            return defer.promise();
+        },
+
+        /**
+         * 使用中コスメの詳細(有効期限、名前など)データゲッター
+         * @return {Array}
+         */
+        getUsedCosmeData : function(){
+            var self = this;
+
+            $.ajax($.extend(true, {
+                url:self.options.ajax.host + '/api/dressup/cosmetic/item?category=used',
+                data:$.extend(true, self.options.query, {'expression':'default'}),
+
+                success:function(data)
+                {
+                    var i,
+                        len = data.items.length;
+
+                    // パーツデータをマージ
+                    for (i = 0; len > i; i++)
+                    {
+                        data.items[i].image = self.wearingCosmeImageData[data.items[i].code];
+                    }
+                    app.UseditemView.createThumb(data.items); // 使用中コスメサムネイル作成
+                },
+
+                error:function()
+                {
+                    app.util.createPopup('コスメの読み込みに失敗しました。<br />しばらく時間を置いて再読み込みしてください。', 'reload');
+                }
+
+            }, self.options.ajax));
+        },
+
+        /**
+         * 下着を配列から削除
+         * @param {number} num
+         */
+        removeUnderwearArray:function(name){
+            this.underwear[name] = [];
+        },
+
+        /**
+         * 下着を配列に追加
+         * @param {number} num
+         */
+        addUnderwearArray: function(name,image){
+            this.underwear[name].push(image);
+        },
+
+        /**
+         * 非表示パーツのリストを追加
+         * @param {number} num
+         */
+        addHidePartsList: function(name){
+            this.hidePartsList.push(name);
+        },
+
+        /**
+         * hideパーツを削除
+         * @param {number} num
+         */
+        removeHideParts: function(check,num){
+            this.hidePartsList.splice(check, num);
+        }
+
+    });
+
+/**
+ * @class Avatar View
+ *
+ * wearTotal:使用中アイテムの総数
+ * direction:体の向き（FL: 左前、FR: 右前）
+ */
+
+app.view.avatar = Class.create({
+    initialize:function(avatar){
+        /** @type {app.config} */
+        this.config = app.config;
+
+        /** @type {app.options} */
+        this.options = app.options;
+
+        /** @type {Object} */
+        this.layer = this._createLayer();
+
+        this.avatarModel = avatar;
+    },
+
+    /**
+     * レイヤー作製
+     * @private
+     */
+    _createLayer : function(){
+        /** @type {Object.<string, Object>} */
+        var layer = {
+            wrap     : $('<div class="pigg-avatar wrapLayer"></div>'),
+            perfumeBack: $('<div class="pigg-avatar-perfume-back itemLayer"></div>'), // 最背面パフューム
+            piggyBack: $('<div class="pigg-avatar-piggy-back itemLayer"></div>'), // 背負いからだ
+            piggyHead: $('<div class="pigg-avatar-piggy-head itemLayer"></div>'), // 背負いあたま
+            headOut  : $('<div class="pigg-avatar-head-outer itemLayer"></div>'),
+            a_bodyOut: $('<div class="pigg-avatar-all-outer itemLayer"></div>'),
+            leftArm  : $('<div class="pigg-avatar-left-arm bodyLayer"></div>'),
+            frontHair: $('<div class="pigg-avatar-front-hair itemLayer"></div>'),
+            head     : $('<div class="pigg-avatar-head bodyLayer"></div>'),
+            outer    : $('<div class="pigg-avatar-outer itemLayer"></div>'),
+            leftLeg  : $('<div class="pigg-avatar-left-leg bodyLayer"></div>'),
+            body     : $('<div class="pigg-avatar-body bodyLayer"></div>'),
+            rightArm : $('<div class="pigg-avatar-right-arm bodyLayer"></div>'),
+            middleBack: $('<div class="pigg-avatar-middle_back itemLayer"></div>'),
+            rightLeg : $('<div class="pigg-avatar-right-leg bodyLayer"></div>'),
+            outerBack : $('<div class="pigg-avatar-outer-back itemLayer"></div>'),
+            backHair : $('<div class="pigg-avatar-back-hair itemLayer"></div>'),
+            perfumeFront: $('<div class="pigg-avatar-perfume-front itemLayer"></div>') // 最前面パフューム
+        };
+
+        layer.wrap.append(layer.perfumeFront) // 最前面パフューム
+                  .append(layer.backHair)
+                  .append(layer.outerBack)
+                  .append(layer.rightArm)
+                  .append(layer.middleBack)
+                  .append(layer.rightLeg)
+                  .append(layer.body)
+                  .append(layer.leftLeg)
+                  .append(layer.outer)
+                  .append(layer.head)
+                  .append(layer.frontHair)
+                  .append(layer.leftArm)
+                  .append(layer.a_bodyOut)
+                  .append(layer.headOut)
+                  .append(layer.piggyHead) // 背負いあたま
+                  .append(layer.piggyBack) // 背負いからだ
+                  .append(layer.perfumeBack) // 最背面パフューム
+
+        return layer;
+    },
+
+    /**
+     * Avatar getter
+     * @return {object} jQuery Object
+     */
+    get :function(where){
+        if(where){
+            switch(where){
+                case 'body':
+                    return $('.pigg-avatar-all-outer,.pigg-avatar-left-arm,.pigg-avatar-outer,.pigg-avatar-left-leg,.pigg-avatar-body,.pigg-avatar-right-arm,.pigg-avatar-right-leg,.pigg-avatar-outer-back',this.layer.wrap);
+                case 'bodyAll':
+                    return $('.pigg-avatar-all-outer,.pigg-avatar-left-arm,.pigg-avatar-head,.pigg-avatar-outer,.pigg-avatar-left-leg,.pigg-avatar-body,.pigg-avatar-right-arm,.pigg-avatar-right-leg,.pigg-avatar-outer-back',this.layer.wrap);
+            }
+        }else{
+            return this.layer.wrap;
+        }
+    },
+
+    /**
+     * レイヤーのクローン作る
+     * @return {Object}
+     */
+    clone:function(){
+        return this.layer.wrap.clone();
+    },
+
+    /**
+     * 身体作製
+     * @param {Object} data JSON Objects array
+     * @return {Object} jQuery Deferred Object
+     */
+    createBody : function(data){
+
+        /** @type {Object} */
+        var defer = $.Deferred();
+
+        /** @type {number} */
+        var count = data.length;
+
+        /** @type {function(Object, number, number, Object):Object} */
+        var process = function(obj, i, arg, self){
+
+            /** @type {Object} */
+            var img;
+
+            /** @type {string} */
+            var part = obj.part;
+
+            /** @type {string} */
+            var subPart;
+            if (!obj.subPart)
+                subPart = "";
+            else
+                subPart = obj.subPart;
+
+            /** @type {string} */
+            var name = part.replace(/^\w_/,'');
+
+            if(name.indexOf('Hair') !== -1){
+                name += ' hair';
+            }
+
+            if((obj.state === 'default') || !obj.state){
+                img = app.util.createImage(part, 'bodyParts ' + name + ' ' + subPart, null, obj);
+                self.appendImage(part, img);
+            }
+
+            if(i === arg){
+                self.trigger('createBodyFinish', [self.layer.wrap]);
+                self = null;
+                return defer.resolve();
+            }
+        };
+
+        app.util.duff(data, process, count, this);
+        process = null;
+        return defer.promise();
+
+    },
+
+    /**
+     * コスメアイテムをアバターに着用させる
+     * @param data {Array|null}
+     */
+    addCosme: function(data){
+        app.log.info('Has cosme item. append to layer of pigg.');
+
+        /** @type {Object} */
+        var defer = $.Deferred();
+
+        if(!data || data.length < 1)
+        {
+            this.trigger('addCosmeFinish', [this.layer.wrap]);
+            return defer.resolve();
+        }
+
+        /** @type {function(Object, number, number, Object):Object} */
+        /** アイテム毎に行う処理 **/
+        var processItems = function(obj, i, arg, self){
+            var i2,
+                len = obj.image.length;
+            for (i2 = 0; len > i2; i2++)
+            {
+                processParts(obj, obj.image[i2], obj.code, self);
+            }
+
+            if(i === arg){
+                app.DressupView.toggleParts();
+                self.trigger('addCosmeFinish', [self.layer.wrap]);
+                self = null;
+                return defer.resolve();
+            }
+        };
+
+        /** パーツの画像毎に行う処理 **/
+        var processParts = function(obj, image, itemCode, self){
+            var name;
+
+            if (image.subPart)
+                name = image.subPart.replace(/^\w_/,'');
+            else
+                name = image.part.replace(/^\w_/,'');
+
+            app.DressupView._setRemove(name, 'hide');
+
+            if((image.state === 'default') || !image.state){
+                var img = app.util.createImage(image.part, 'cosmeParts ' + name, itemCode, image);
+                self.appendImage(image.part, img);
+                app.DressupView.hideParts[name] = 1;
+                app.DressupView.wearingCosmeItems[name].data = obj;
+            }
+        };
+
+        app.util.duff(data, processItems, data.length, this);
+        process = null;
+        return defer.promise();
+    },
+
+    /**
+     * 下着を全裸のアバターに着せる
+     * @param {array} data JSONオブジェクト配列
+     * @return {Object} jQuery Deferred Object
+     */
+    addUnderware : function(data){
+
+        /** @type {Object} */
+        var self = this;
+
+        /** @type {Object} */
+        var defer = $.Deferred();
+
+        /** @type {number} */
+        var count = data.length;
+
+        /** @type {function(Object, number, number, Object):Object} */
+        var process = function(obj, i, arg, self){
+            var uName = obj.itemid.match(/\w+_\w+_(bottoms_new|tops_new)$/i)[1];
+            var count = obj.image.length;
+            self.avatarModel.removeUnderwearArray(uName);
+
+            for(var j = count; j--; ){
+                var image = obj.image[j];
+                var img = app.util.createImage(image.part, 'defaultParts default_' + uName, null, image);
+
+                self.appendImage(image.part, img);
+                self.avatarModel.addUnderwearArray(uName,image);
+            }
+
+            if(i === arg){
+                self.trigger('addUnderwareFinish', [self.layer.wrap]);
+                self = null;
+                return defer.resolve();
+            }
+        };
+
+        app.util.duff(data, process, count, this);
+        process = null;
+        return defer.promise();
+    },
+
+    /**
+     * partNameで指定された faceパーツを隠す
+     * 主にコスメ用
+     * this.hidePartsListに partName を pushして管理
+     * @param {string} partName JSONオブジェクト内のpartの値(アンダーバーより後ろ)
+     */
+    hideFaceParts:function(partName){
+        if($.inArray(partName, this.avatarModel.hidePartsList) === -1){
+            var part = this.layer.head.find('.bodyParts.' + partName);
+
+            if(!part || !part[0])
+                return;
+
+            $(part[0]).hide();
+            this.avatarModel.addHidePartsList(partName);
+        }
+    },
+
+    /**
+     * partNameで指定された faceパーツを表示
+     * 主にコスメ用
+     * this.hidePartsListに partName を pushして管理
+     * @param {string} partName JSONオブジェクト内のpartの値(アンダーバーより後ろ)
+     */
+    showFaceParts:function(partName){
+        var check = $.inArray(partName, this.avatarModel.hidePartsList);
+        if(check === -1){
+            this.layer.head.find('.bodyParts.' + partName).show();
+            this.avatarModel.removeHideParts(check, 1);
+        }
+    },
+
+    /** partの値を正規表現で分割する
+     * もっぱらappendImageが使うためのもの
+     * @param {string} part JSONオブジェクト内のpartの値
+     * @return {{fb:string, name:string, where:string}} fb:(f|b), name:ItemName, where: (front|back)
+     */
+    _getPartRegex : function(part) {
+        part.match(/(\w)_([^_]+)_*(front|back)*$/i);
+        return {
+          fb:RegExp.$1,
+          name:RegExp.$2.replace(/\d+/g,''),
+          where:RegExp.$3
+        };
+    },
+
+    /**
+     *  画像をappendChildする
+     * @param {string} part JSONオブジェクト内のpartの値
+     * @param {Object} img HTML img Element(Native)
+     */
+    appendImage : function(part, img) {
+
+        /** @type {string} */
+        var regex = this._getPartRegex(part);
+
+        /** @type {Object} string:jQueryObject */
+        var layer = this.layer;
+
+        /** @type {string} */
+        var method = (regex.where === 'back')? 'prepend':'append';
+
+        switch(regex.name) {
+            case "face" :
+                return layer.head[method](img);
+                break;
+            case "option" :
+                return layer.head[method](img);
+                break;
+            case "eye":
+                return layer.head[method](img);
+                break;
+            case "eyebrow":
+                img.className = img.className + ' eyebrow';
+                return layer.head[method](img);
+                break;
+            case 'mole':
+                return layer.head[method](img);
+                break;
+            case 'beard':
+                return layer.head[method](img);
+                break;
+            case "mouth":
+                return layer.head[method](img);
+                break;
+            case "glasses":
+                return layer.head[method](img);
+                break;
+            case "cheek":
+                return layer.head[method](img);
+                break;
+            case "nose":
+                return layer.head[method](img);
+                break;
+            case "facepaint": // フェイスペイント（口鼻覆い）
+                img.className = img.className + ' facePaint';
+                return layer.head[method](img);
+                break;
+            case "underfacepaint": // フェイスペイント（傷跡等下の方に来るもの）
+                img.className = img.className + ' underfacepaint';
+                return layer.head[method](img);
+                break;
+            case "backHairOut": // 背負い頭
+                return layer.piggyHead[method](img);
+                break;
+            case "frontHair":
+                return layer.frontHair[method](img);
+                break;
+            case "frontHairBack":
+                return layer.frontHair[method](img);
+                break;
+            case "middleHair":
+                return layer.frontHair[method](img);
+                break;
+            case "body":
+                if(regex.where === 'back'){
+                    return layer.outerBack[method](img);
+                }else{
+                    return layer.body[method](img);
+                }
+                break;
+            case "shadow":
+                return layer.wrap[method](img);
+                break;
+            case "leftEar":
+                if(img.className.indexOf('itemParts')!==-1){
+                    img.className = img.className.replace('itemParts', 'earParts');
+                }
+                return layer.frontHair[method](img);
+                break;
+            case "leftEaring":
+                img.className = img.className.replace('itemParts', 'earParts');
+                return layer.frontHair[method](img);
+                break;
+            case "rightEar":
+                if(img.className.indexOf('itemParts')!==-1){
+                    img.className = img.className.replace('itemParts', 'earParts');
+                    method = 'prepend';
+                }
+
+                return layer.head[method](img);
+                break;
+
+            case "rightEaring":
+                img.className = img.className.replace('itemParts', 'earParts');
+                return layer.head.find('.rightEar').after(img);
+                break;
+            case "rightLeg":
+                return layer.rightLeg[method](img);
+                break;
+            case "leftLeg":
+                return layer.leftLeg[method](img);
+                break;
+            case "bodyOut":
+                img.className = img.className + ' wearOuter';
+                if(regex.where === 'front'){
+                    return layer.outer[method](img);
+                }else{
+                   return layer.outerBack[method](img);
+                }
+                break;
+            case "bodyOutOut": // 背負いからだ
+                return layer.piggyBack[method](img);
+                break;
+            case "bodyPerfume": // パフューム
+                if(regex.where === 'front'){
+                    return layer.perfumeFront[method](img);
+                }else{
+                    return layer.perfumeBack[method](img);
+                }
+                break;
+            case 'backHair':
+                img.className += ' hair';
+                return layer.backHair[method](img);
+                break;
+            case 'rightArmUpper':
+                return layer.rightArm[method](img);
+                break;
+            case 'rightArmLower':
+                return layer.rightArm.append(img);
+                break;
+            case 'rightHand':
+                img.className = img.className.replace('itemParts', 'handParts');
+                return layer.rightArm[method](img);
+                break;
+            case 'leftArmUpper':
+                return layer.leftArm[method](img);
+                break;
+            case 'leftArmLower':
+                return layer.leftArm[method](img);
+                break;
+            case 'leftHand':
+                img.className = img.className.replace('itemParts', 'handParts');
+                return layer.leftArm[method](img);
+                break;
+            case 'allbodyOut':
+                if(regex.where === 'front'){
+                    return layer.a_bodyOut[method](img);
+                }else{
+                    return layer.outerBack[method](img);
+                }
+                break;
+            case 'bodyMiddle':
+                return layer.middleBack[method](img);
+                break;
+            case 'headOut':
+                return layer.headOut[method](img);
+                break;
+            default :
+                return layer.wrap[method](img);
+                break;
+            }
+        }
+    });
+
+})(jQuery);

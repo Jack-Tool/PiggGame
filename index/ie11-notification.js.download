@@ -1,0 +1,10 @@
+(function () {
+	const userAgent = window.navigator.userAgent.toLowerCase()
+	if (userAgent.match(/(msie|MSIE)/) || userAgent.match(/(T|t)rident/)) {
+		var e = document.createElement("div");
+		e.setAttribute("id", "ie11_notification");
+		e.innerHTML     = "ご利用のブラウザ（Internet Explorer）は非対応です。詳しくは<a href='https://ameblo.jp/pigg-staff/entry-12545266384.html'>スタッフブログ</a>を御覧ください。";
+		var t = document.getElementById("amb_header_placeholder");
+		t.appendChild(e);
+	};
+})();

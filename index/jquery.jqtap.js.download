@@ -1,0 +1,159 @@
+/**
+ *  @license jQTap
+ *  (original source : jQTouch (c) 2009-2011 Sencha Labs)
+ */
+(function($, undefined){
+	
+	$.jQTap = function(options) {	
+		
+		var defaults = {
+	            debug:false,
+	            hoverDelay: 50,
+	            pressDelay: 1000,
+	            moveThreshold: 10,
+	            touchSelector: 'a,.spg-touch',
+	            enableTap:false,
+	            live:false
+            };
+            
+        var $body,
+             publicObj ={},
+         	 $html     = $('html'),
+             tapReady  = true,
+	         jQTSettings = {},
+	         touchSelectors = [],
+	         hasTouch = ("ontouchstart" in document.documentElement);
+	         
+	    var events = {
+		        start : hasTouch ? "touchstart" : "mousedown", move : hasTouch ? "touchmove" : "mousemove", 
+		        end : hasTouch ? "touchend" : "mouseup"
+		   };
+		
+		function _outHandler(){
+			$(this).removeClass('spg-active');
+		};
+		
+		//touchstart | mousedown
+		function _startHandler(e){
+			
+			var $el = $(e.target),
+				startTime = $.now(),
+                hoverTimeout = null,
+                pressTimeout = null,
+                touch,
+                startX,
+                startY,
+                moved = false;
+             
+ 			// Find the nearest tappable ancestor
+
+            if (!$el.is(touchSelectors)) {
+                $el = $(e.target).closest(touchSelectors);
+            }
+            
+            startX = hasTouch ? e.originalEvent.touches[0].pageX : e.pageX;
+            startY = hasTouch ? e.originalEvent.touches[0].pageY : e.pageY;
+            
+			hoverTimeout = setTimeout(function() {
+                $el.addClass('spg-active');
+            }, jQTSettings.hoverDelay);
+
+			 pressTimeout = setTimeout(function() {
+                clearTimeout(hoverTimeout);
+                $el.off(events.move, _moveHandler).off(events.end, _endHandler);
+                $el.removeClass('spg-active');
+                $el.trigger('press');
+            }, jQTSettings.pressDelay);
+            
+            
+			 // Prep the element
+            $el.on(events.move, _moveHandler)
+               .on(events.end, _endHandler);
+            
+			function _moveHandler(e){
+				clearTimeout(hoverTimeout);
+	            var x = hasTouch ? event.touches[0].pageX : e.pageX,
+	                y = hasTouch ? event.touches[0].pageY : e.pageY;
+	                
+	            if ( Math.abs(x - startX) > jQTSettings.moveThreshold 
+	            	|| Math.abs(y - startY) > jQTSettings.moveThreshold) {
+	                moved = true;
+	                $el.removeClass("spg-active");
+	            }
+			};
+			
+			function _endHandler(e){
+				clearTimeout(hoverTimeout);
+                clearTimeout(pressTimeout);
+                $el.off(events.move, _moveHandler).off(events.end, _endHandler);
+                
+	            var t = $.now() - startTime;
+	            
+	            $el.removeClass("spg-active");
+		
+	            if (!moved && t < jQTSettings.pressDelay) {
+             		
+             		e.preventDefault();
+             		e.stopPropagation();
+             		
+	                $el.trigger('tap');
+	                
+	                if($el.is('a')){
+	                	var href = $el.attr('href');
+	                	if(href !== '#' && href.indexOf('javascript') !== -1){
+	                		if(href.indexOf('#') !== -1){
+	                			window.location.hash = href.substr(1);
+	                			return false;
+	                		}else{
+	                			window.location.href = href;
+	                			return false;
+	                		}
+	                	}
+	                }
+	           		return false;
+	            }else{
+	            	return true;
+	            }
+	            
+			};
+		};
+		   
+	    function init(options) {
+            
+            jQTSettings = $.extend({}, defaults, options);
+            jQTSettings.enableTap = false;
+       };
+        
+        init(options);
+
+
+    	$.fn.enableTap = function() {
+    		 if(jQTSettings.enableTap){
+    			$(this).on(events.start, _startHandler).on('mouseout', _outHandler);
+    		 };
+    		return $(this);
+    	};
+
+        if(jQTSettings.enableTap){
+        	// Document ready stuff
+	        $(document).ready(function() {
+	        	$body = $(document.body);
+	        	
+	        	touchSelectors.push('button');
+	            touchSelectors.push('input');
+	        	touchSelectors.push(jQTSettings.touchSelector);
+	        	touchSelectors = touchSelectors.join(',');
+	        	
+				if(jQTSettings.live){
+					$(document).on(events.start, touchSelectors,_startHandler).on('mouseout', touchSelectors, _outHandler);
+				}else{
+					$(touchSelectors).on(events.start,_startHandler).on('mouseout',  _outHandler);
+				}
+				
+	        });
+        }
+	    
+	    return jQTSettings;
+	};
+	
+})(jQuery);

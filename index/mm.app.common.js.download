@@ -1,0 +1,338 @@
+(function($){
+
+	/** @type {Object} */
+	var app = window.app || {};
+	app.util = app.util || {};
+	app.view = app.view || {};
+	app.model = app.model || {};
+
+	/** @type {string} addEventListenerの対象イベント名決定 */
+	//app.handleEventName = (app.has.touch && (window.webview||app.is.iDevice))? 'tap':'click';
+    app.handleEventName = 'click';
+
+    app.config.piggCode = document.body.getAttribute('data-piggcode');
+
+	/**
+	 * 共通utility
+	 * @type {Object}
+	 */
+	var util = {
+
+	    /**
+	     * アラート表示
+	     * setTimeoutに入れてるのはiPhone対策
+	     */
+	    alert:function(mes){
+	    	setTimeout(function(){
+				alert(mes);
+			},0);
+	    },
+
+		/**
+		 * @class page dispatcher
+		 */
+		dispatcher : function(){
+				/** @constructor */
+				var Dispatcher = function(target) {
+					this.target = target || 'hash';
+					this.loc = location[target];
+					this.path_func = [];
+				};
+
+				Dispatcher.prototype = {
+					add:function(path, func){
+						if (func) this.path_func.push([path, func]);
+					},
+					execute:function(){
+						this.loc = location[this.target];
+						app.log.debug('location.hash = ' + this.loc);
+					    for(var i = 0, l = this.path_func.length; i < l; ++i) {
+					        var func = this.path_func[i];
+					        var match = this.loc.match(func[0]);
+					        match && func[1](match);
+					    };
+					}
+				};
+				return Dispatcher;
+		}(),
+
+		/**
+		 * 文字数カウント
+		 * @type {string} str
+		 * @type {boolean} [opt_option]
+		 * raw:modeがbyteの場合trueだとそのまま、falseだと２で割って返す
+		 * wrap:trueで改行除去して計算
+		 * mode: byteとlength　byteモードは 1文字につき半角=1 全角=2、lengthは全ての文字で1カウントアップ
+		 */
+		strLength : function (str, opt_option){
+			len = 0;
+			var option = {
+				'raw':false,//生バイト数
+				'wrap':true,//改行除去
+				'mode':'byte' //or length
+			};
+
+			option = $.extend(true, option, opt_option);
+
+			if(option.wrap){
+				str = str.replace(/[\r\n]+/g, '');
+			}
+
+			if(option.mode === 'byte'){
+				str = escape(str);
+				for(i = 0; i < str.length; i++, len++){
+					if(str.charAt(i) == "%"){
+						if(str.charAt(++i) == "u"){
+							i += 3;
+							len++;
+						}
+						i++;
+					}
+				}
+				return (option.raw ? len : Math.ceil(len / 2));
+			}else{
+				return str.length;
+			}
+
+		},
+
+		/**
+		 * htmlspecialchar delete
+		 * @type {string} text
+		 * @return {string}
+		 */
+		clearSpecialchars : function(text) {
+			var out;
+			out = text.replace(/[\?<>\(\)\`~]/g, '');
+			out = out.replace(/"/g, "&quot;");
+			out = out.replace(/'/g, "&#39;");
+
+			return out;
+		},
+
+		/**
+		 * htmlspecialchars encoder
+		 * @type {string} str
+		 * @return {string}
+		 */
+		htmlspecialchars : function(str) {
+			if( typeof (str) == "string") {
+				str = str.replace(/&(?!\w+;|#\d+;)/g, "&amp;");
+				/* must do &amp; first */
+				str = str.replace(/"/g, "&quot;");
+				str = str.replace(/'/g, "&#039;");
+				str = str.replace(/</g, "&lt;");
+				str = str.replace(/>/g, "&gt;");
+			}
+			return str;
+		},
+
+		/**
+		 * htmlspecialchars decoder
+		 * @type {string} str
+		 * @return {string}
+		 */
+		htmlspecialchars_decode : function(str) {
+			if( typeof (str) == "string") {
+				str = str.replace(/&gt;/ig, ">");
+				str = str.replace(/&lt;/ig, "<");
+				str = str.replace(/&#039;/g, "'");
+				str = str.replace(/&quot;/ig, '"');
+				str = str.replace(/&amp;/ig, '&');
+				/* must do &amp; last */
+			}
+			return str;
+		},
+
+		/**
+		 * スペース削除
+		 * @param {string} str
+		 * @return {string}
+		 */
+		trim : function(str) {
+			return str.replace(/[\s 　]*/g, '');
+		},
+
+		/**
+		 * アメーバ的文字チェック
+		 * @param {string} value テストする文字列
+		 * @return {(string|boolean)} [opt_maxLen] max length
+		 * @return {string|boolean}
+		 */
+		ngWordCheck : function(value, opt_maxLen, flg) {
+			var result = [];
+			var flg = flg || false;
+			//本番よりも少ないです
+			//ひらがなかたかな混在してると反応しないお(´・ω・｀)
+			var ngWords = ['ﾀﾋね', '●メプ', '￥交', '\\交', '\\交', '￥交', '￥女', '\\女', '￥女', '18禁', '１８禁', '１8禁', '1８禁', 'ＪＣＪＫ援○', 'ＪＣデアイ', 'ＪＣであい', 'ＪＣ援○', 'ＪＫであい', 'ＪＫデアイ', 'ＪＫ援○', 'ＪＳであい', 'ＪＳデアイ', 'ＪＳ援○', 'S E X', 's e x', 's_e_x', 'S_E_X', 'SE X', 'ＳＥ×', 'ＳＥＸ', 'Ｓｅｘ', 'ｓｅｘ', 'Ｓｅｘ', 'ｓＥｘ', 'ｓｅＸ', 'ＳＥｘ', 'ｓＥＸ', 'ＳｅＸ', 'SEX', 'Sex', 'sEx', 'seX', 'SEx', 'SeX', 'sEX', 'sex', 'ＴＥＬカノ', 'TELｶﾉ', 'ＴＥＬカレ', 'TELｶﾚ', 'TELこうかん', 'TELコウカン', 'TELｺｳｶﾝ', 'TEL交換', 'アダルト', 'あだると', 'ｱﾀﾞﾙﾄ', 'アナル', 'あなる', 'ｱﾅﾙ', 'い＝め＝ぷ', 'イ○プ', 'イ●プ', 'イメ○', 'イメ●', 'いんらん', 'ｲﾝﾗﾝ', 'ヴぁぎな', 'ヴァギナ', 'ｳﾞｧｷﾞﾅ', 'う゛ぁぎな', 'ウリ専', 'ｳﾘ専', 'エロアニメ', 'えろあにめ', 'ｴﾛｱﾆﾒ', 'エロ画像', 'えろ画像', 'ｴﾛ画像', 'エンコウ', 'ｴﾝｺｳ', 'お○にー', 'オナニー', 'おなにー', 'ｵﾅﾆｰ', 'おめこ', 'オメコ', 'キメセク', 'ｷﾒｾｸ', 'くり○りす', 'クリトリス', 'くりとりす', 'ｸﾘﾄﾘｽ', 'ココカノ', 'ｺｺｶﾉ', 'ココカレ', 'ｺｺｶﾚ', 'ｼﾈ', 'ショタ', 'スカトロ', 'すかとろ', 'ｽｶﾄﾛ', 'すかとろ', 'セ○クス', 'セクフレ', 'ｾｸﾌﾚ', 'セクロス', 'ｾｸﾛｽ', 'セッ○ス', 'セック○', 'セックス', 'セックす', 'セッくス', 'セっクス', 'せっくス', 'セッくス', 'ｾｯｸｽ', 'セックル', 'ｾｯｸﾙ', 'セフレ', 'せふれ', 'ｾﾌﾚ', 'チンコ', 'ﾁﾝｺ', 'チンチン', 'ちんちん', 'ﾁﾝﾁﾝ', 'チンポ', 'ちんぽ', 'チンポ', 'ﾁﾝﾎﾟ', 'ティムポ', 'ﾃｨﾑﾎﾟ', 'ティンポ', 'ﾃｨﾝﾎﾟ', 'どこもコムとも', 'ニガー', 'ニグロ', 'ぱいぱん', 'パイパン', 'ﾊﾟｲﾊﾟﾝ', 'ハメ撮', 'ﾊﾒ撮', 'ハメ撮り', 'はめ撮り', 'ﾊﾒ撮り', 'ハメ写', 'ﾊﾒ写', 'ぶぁぎな', 'フェラ', 'ふぇら', 'ﾌｪﾗ', 'フェラされ', 'ふぇらされ', 'ﾌｪﾗされ', 'フェラして', 'ふぇらして', 'ﾌｪﾗして', 'プチ援', 'ﾌﾟﾁ援', 'プチ援', 'マンコ', 'まんこ', 'ﾏﾝｺ', 'まんこ', 'マン汁', 'まん汁', 'ﾏﾝ汁', 'まん汁', 'ヤリコン', 'ﾔﾘｺﾝ', 'ヤリサー', 'ﾔﾘｻｰ', 'ヤリトモ', 'ヤリマン', 'やりまん', 'ﾔﾘﾏﾝ', 'ヤリ部屋', 'ﾔﾘ部屋', 'ヤリ目', 'ﾔﾘ目', 'ヤリ友', 'やり友', 'ﾔﾘ友', 'ヤリ友', 'ﾔﾘ友', 'ラブドラッグ', 'ﾗﾌﾞﾄﾞﾗｯｸﾞ', 'リスカ', 'ﾘｽｶ', 'リストカット', 'ﾘｽﾄｶｯﾄ', 'レイパー', 'ﾚｲﾊﾟｰ', 'れいぷ', 'レイプ', 'ﾚｲﾌﾟ', '淫乱', '円交', '援交', '顔射', '逆￥', '逆\\', '逆サポ', '逆ｻﾎﾟ', '巨根', '禁止ワード', '殺す', '死にたい', '死にましょう', '死にます', '死にませんか', '死ね', '自慰', '自殺', '手コキ', '手ｺﾐ', '手マン', '手ﾏﾝ', '青姦', '千摺り', '素股', '即ハメ', '即ﾊﾒ', '即マン', '即ﾏﾝ', '即ヤリ', '即ﾔﾘ', '大麻', '痴漢', '潮ふき', '潮フキ', '潮吹き', '直ぁど', '直ぁド', '直ァド', '直あど', '盗撮', '肉棒', '買春', '売女', '卑猥', '麻薬', '無修正', '乱交', '炉利', 'エロイプ', 'ｓ○Ｘ', 'えろいぷ', 'Fuck', 'FUCK', 'fuck', 'ファック', 'ふぁっく', 'ピグH', 'ピグエッチ', 'ೋ', 'ちんこ', 'チンコ', 'ﾁﾝｺ'];
+
+			value = app.util.trim(value).replace(/[\n\r]+/g, '');
+
+			if(value.length === 0 && flg === false) {
+				result.push('何も入力されていません');
+			}
+
+			if(opt_maxLen && app.util.strLength(value, {mode:'length'}) > opt_maxLen) {
+				result.push(opt_maxLen + '文字以上は送信できません');
+			}
+
+			for(var i = ngWords.length; i--; ) {
+				if(value.indexOf(ngWords[i]) >= 0) {
+					result.push('使用できない文字が含まれています');
+					break;
+				}
+			}
+
+			if(result.length > 0) {
+				return result.join('\n');
+			} else {
+				return true;
+			}
+		},
+
+		copyToClipBoard : function(nodeName,message) {
+			var copyNode = document.getElementsByClassName(nodeName)[0];
+				var range = document.createRange();
+				range.selectNode(copyNode);
+				window.getSelection().removeAllRanges();
+				window.getSelection().addRange(range);
+				document.execCommand('copy');
+			if (message) {
+				app.util.alert(message);
+			}
+		}
+
+	};
+
+	$.extend(true, {}, app.util, util);
+
+	var view = {
+
+		currentPage:'main',
+
+		pageTitle:$('.spg-pageTitle'),
+
+		_titles:{},
+
+
+		/**
+		 * スクロールさせる
+		 * @return {void}
+		 */
+	    windowScroll:function(){
+
+		    setTimeout(function(){
+		    	window.scrollTo(0, (app.is.android? 1:0));
+		    }, 0);
+	    },
+
+		/**
+		 * bodyにクラス付与
+		 * @return {void}
+		 */
+		addBodyClass : function(){
+			/** @type {Array.<string>} */
+			var classes = [];
+
+			//判別クラス追加（OS）
+			if(app.is.android){
+				classes.push('spg-android');
+			} else if(app.is.iDevice){
+				classes.push('spg-apple');
+			}
+
+			//判別クラス追加（デバイス）
+			if(app.is.smartphone){
+				classes.push('spg-mobile');
+			}else{
+				classes.push('spg-pc');
+			}
+
+			//判別クラス追加（フルスクリーンモード）
+			if(app.is.standalone){
+				classes.push('spg-fullscreen');
+			}
+
+			$(document.body).addClass(classes.join(' '));
+		},
+
+		/**
+		 * タイトルプリロード
+		 * @param {Array.<Object>} array {{name:string, src:string, alt:string}}
+		 */
+		preloadTitle:function(array){
+			var titles = {};
+
+			/*
+			app.view._titles['main'] = app.view.pageTitle.find('img');
+
+			for(var i = 0, end = array.length; i < end; i++){
+				var obj = array[i];
+				app.view._titles[obj.name] = '<img src="' + obj.src + '" alt="'+ obj.alt + '" height="20">';
+			}
+			*/
+			app.view._titles['main'] = app.view.pageTitle.find('main');
+
+			for(var i = 0, end = array.length; i < end; i++){
+				var obj = array[i];
+				app.view._titles[obj.name] = obj.alt;
+			}
+		},
+
+		/**
+		 * タイトル画像変更
+		 */
+		changePageTitle:function(pagename){
+			pagename = pagename ? pagename : app.view.currentPage;
+			app.view.pageTitle.empty().append(app.view._titles[pagename]);
+		},
+
+		/**
+		 * headのtitle変更
+		 */
+		changeHeadTitle:function(text, opt_fix){
+			document.title = text + (!opt_fix ? ' | アメーバピグ' :'');
+		},
+
+		/**
+		 * 疑似ページ変更
+		 */
+		changePage:function(pagename){
+
+			pagename = pagename ? pagename : app.view.currentPage;
+
+			//ページ隠す
+		    $('.spg-page').removeClass('spg-current');
+		    //ページ表示
+		    $('#' + pagename ).addClass('spg-current');
+		}
+	};
+
+	app.util = $.extend(true, {}, app.util, util);
+	app.view = $.extend(true, {}, app.view, view);
+
+	/**
+	 * Observer
+	 */
+	app.Observer = function(id) {
+	    var pubSub = {};
+	    return function(id){
+	         var callbacks, method, pubsub = id && pubSub[id];
+	        if(!pubsub) {
+	            callbacks = $.Callbacks('unique');
+	            pubsub = {
+	                publish : callbacks.fire,
+	                subscribe : callbacks.add,
+	                unsubscribe : callbacks.remove,
+	                empty:callbacks.empty
+	            };
+	            if(id) {
+	                pubSub[id] = pubsub;
+	            }
+	        }
+	        return pubsub;
+	    };
+	}();
+
+
+})(jQuery);

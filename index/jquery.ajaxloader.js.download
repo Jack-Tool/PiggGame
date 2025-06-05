@@ -1,0 +1,346 @@
+/**
+ * jQuery Plugin ajaxLoader
+ * - jQuery(v1.4 upper)
+ * 
+ * 名前だだ被りしてるけど(ﾟεﾟ)ｷﾆｼﾅｲ!!
+ *
+ * ▼これを生成してappendします
+ * <div class="spg-ajaxloader"><canvas /><div class="spg-loadingMessage">読み込み中</div></div>
+ */
+
+(function($) {
+
+	var _pluginName = 'ajaxLoader', plugin;
+	/**
+	 * jQuery function 'ajaxLoader'
+	 * @param options {*}
+	 * @return {void}
+	 *
+	 * @example
+	 * $('#parent').ajaxLoader(); 適用
+	 * $('#parent').ajaxLoader('init'); 初期化
+	 * $('#parent'),ajaxLoader({hoge:false}); オプション設定
+	 * $('#parent').ajaxLoader('stop'); 回転停止
+	 * $('#parent').ajaxLoader('restart'); 再生
+	 * $('#parent').ajaxLoader('hide'); 表示
+	 * $('#parent').ajaxLoader('show'[, message]); 非表示
+	 * $('#parent').ajaxLoader('destroy'); 削除
+	 * $('#parent').ajaxLoader('message', 'loading...'); テキストセット
+	 * $('#parent > .spg-ajaxloader').data('spinner'); //get canvas of spinner
+	 */
+	$.fn[_pluginName] = plugin = function(options) {
+		if( typeof options === "string") {// method call
+			var args = Array.prototype.slice.call(arguments, 1), returnValue = this;
+
+			this.each(function() {
+
+				var instance = $.data(this, _pluginName);
+				var value = instance && $.isFunction(instance[options]) ? instance[options].apply(instance, args) : instance;
+
+				if(value !== instance && value !== undefined) {
+					returnValue = value;
+					return false;
+				}
+			});
+			return returnValue;
+		} else {
+			return this.each(function() {
+				var instance = $.data(this, _pluginName);
+				if(instance) {
+					$.extend(true, instance.options, options);
+					instance.init();
+				} else {
+					$.data(this, _pluginName, new plugin.prototype.create(options, this));
+				}
+			});
+		}
+	};
+
+	plugin.prototype = {
+		options : {
+
+			/**
+			 * 外側のdivにつけるID
+			 * @type {string}
+			 */
+			id : 'ajaxloader',
+			
+			/**
+			 * 外側のdivにつけるクラス
+			 * @type {string}
+			 */
+			className:'spg-ajaxloader',
+			
+			/**
+			 * 初期表示
+			 * @type {boolean}
+			 */
+			show:false,
+			
+			/**
+			 * メッセージ
+			 * htmlもおｋ
+			 * @type {string}
+			 */
+			message:'読み込み中…',
+
+			spinner : {
+
+				/**
+				 * canvasサイズ
+				 * @type {number}
+				 */
+				size : 20,
+
+				/**
+				 * 自動生成される要素に付与するＩＤ
+				 * @type {string}
+				 */
+				id : 'spinner',
+
+				/**
+				 * ●の色
+				 * @type {string}
+				 */
+				color : 'rgb(0,0,0)',
+
+				/**
+				 * ●の数
+				 * @type {number}
+				 */
+				disks : 10,
+
+				/**
+				 * ●の角丸
+				 * @type {number}
+				 */
+				radius : 2,
+
+				/**
+				 * ●の速さ
+				 * @type {string}
+				 */
+				speed : 10,
+
+				/**
+				 * canvasの背景色
+				 * @type {string}
+				 */
+				backgroundColor : 'transparent'
+			}
+		},
+
+		/** @type {boolean} */
+		showing : false,
+		
+		/**
+		 * 主要要素とプロパティ作成
+		 * @param options {object} Plugin option
+		 * @param element {object} HTML Element
+		 */
+		create : function(options, element) {
+			this.element = $(element);
+			var options = this.options = $.extend(true, {}, this.options, options);
+			var spinOpt = this.options.spinner;
+			
+			//wrapper element
+			this.wrapper = $('<div />', {
+				'id' : options.id,
+				'class':options.className
+			});
+			
+			//loading message
+			this.textContainer = $('<div />', {
+				'class': options.className + 'Message',
+				'html':this.options.message
+			});
+			
+			var _ratio = Math.round(window.devicePixelRatio);
+			spinOpt.size = spinOpt.size * _ratio;
+			spinOpt.radius = spinOpt.radius * _ratio;
+			
+			//spinner
+			var canvas = document.createElement("canvas");
+			canvas.id = spinOpt.id;
+			canvas.className = options.className + 'Spinner';
+			canvas.width = canvas.height = spinOpt.size;
+			ctx2d = canvas.getContext("2d");
+
+			var Dot = function(x, y, radius, color, alpha) {
+				this.radius = radius;
+				this.color = color;
+				this.alpha = alpha;
+				this.opacity = alpha;
+				this.x = x;
+				this.y = y;
+			};
+
+			Dot.prototype.draw = function() {
+				this.ctx.beginPath();
+				this.ctx.globalAlpha = this.alpha;
+				this.ctx.fillStyle = this.color;
+				this.ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2, true);
+				this.ctx.fill();
+			};
+
+			Dot.prototype.setAlpha = function() {
+				this.opacity -= 1 / this.num;
+				this.alpha = this.opacity;
+				if(this.opacity < 0.2) {
+					this.alpha = 0.2;
+				}
+				if(this.opacity < 0) {
+					this.opacity = 1;
+					this.alpha = 1;
+				}
+			};
+			
+			// pre calculate positions
+			var centerPos = spinOpt.size / 2;
+			var radius = spinOpt.size * 0.7 / 2;
+			var dots = [];
+			var eachRadian = 360 / spinOpt.disks * Math.PI / 180;
+
+			for(var i = 1, n = spinOpt.disks; i <= n; i++) {
+				var rad = eachRadian * i;
+				var cosRad = Math.cos(rad), sinRad = Math.sin(rad);
+				var alpha = i / spinOpt.disks;
+				var d = new Dot(centerPos + radius * cosRad, centerPos + radius * sinRad, spinOpt.radius, spinOpt.color, alpha);
+				d.ctx = ctx2d;
+				d.num = spinOpt.disks;
+				dots.push(d);
+			}
+
+			this.wrapper.data('dots',dots)
+						.data('spinner', canvas)
+						.data('spinnerTimer', null)
+						.prepend(canvas)
+						.append(this.textContainer).prependTo(this.element);
+			
+			if(this.options.show){
+				this.show();
+			}else{
+				this.wrapper.hide();
+			}
+			return this;
+		},
+		
+		//initialize
+		init : function() {
+			this.stop();
+			this.textContainer.text(this.options.message);
+			return this;
+		},
+		
+		//destroy loader
+		destroy : function() {
+			if(this.canvas) {
+				this.stop();
+				this.canvas.remove();
+				this.canvas = null;
+			}
+			
+			this.wrapper.remove();
+		},
+		
+		message:function(text){
+
+			this.textContainer.html(text);
+			return this;
+		},
+		
+		//show loader
+		show : function(text) {
+			var spinner = this.wrapper.data('spinner')
+
+			if(spinner) {
+				this.stop();
+				this._run();
+				//spinner.style.display = 'block';
+			}
+			if(text){
+				this.message(text);
+			}
+			
+			this.wrapper.show();
+			this.showing = true;
+			return this;
+		},
+		
+		hide : function() {
+			if(this.showing) {
+				var spinner = this.wrapper.data('spinner');
+				
+				if(spinner) {
+					this.stop();
+					//spinner.style.display = 'none';
+				}	
+				
+				this.wrapper.hide();
+				this.showing = false;
+			}
+			return this;
+		},
+		
+		restart : function() {
+			var timer = this.wrapper.data('spinnerTimer');
+			
+			if(!this.showing) {
+				return;
+			}
+			
+			if(!timer) {
+				this._run();
+			}
+			return this;
+		},
+		
+		stop : function() {
+			if(!this.showing) {
+				return;
+			}
+			
+			var timer = this.wrapper.data('spinnerTimer');
+			
+			if(timer) {
+				clearTimeout(timer);
+				this.wrapper.data('spinnerTimer', null);
+			}
+			return this;
+		},
+		
+		_draw : function() {
+			var spinner = this.wrapper.data('spinner');
+
+			if(spinner){
+				var dots = this.wrapper.data('dots');
+				var ctx = spinner.getContext("2d");
+			
+				ctx.clearRect(0, 0, this.options.spinner.size, this.options.spinner.size);
+				ctx.globalAlpha = 1;
+				ctx.fillStyle = this.options.spinner.backgroundColor;
+	
+				for(var i = dots.length; i--; ) {
+					dots[i].setAlpha();
+					dots[i].draw();
+				}
+			}else{
+				return false;
+			}
+			
+		},
+		
+		_run : function() {
+			var self = this;
+			
+			var timer = setInterval(function() {
+				self._draw.call(self);
+			}, 1000 / this.options.spinner.speed);
+			
+			this.wrapper.data('spinnerTimer', timer);
+		}
+	};
+
+	plugin.prototype.create.prototype = plugin.prototype;
+
+})(jQuery);

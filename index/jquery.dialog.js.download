@@ -1,0 +1,274 @@
+/**
+ * jQuery Plugin Dialog
+ * - jQuery(v1.4 upper)
+ */
+
+(function($){
+
+    var _pluginName = 'dialog', plugin;
+     /**
+     * jQuery function 'dialog'
+     * @param options {*}
+     * @return {void}
+     *
+     * @example
+     * $('#parent').dialog(); 適用
+     * $('#parent').dialog('init'); 初期化
+     * $('#parent').dialog('content', '<p>ダイアログ</p>'); 中身追加
+     * $('#parent'),dialog({hoge:false}); オプション設定
+     */
+    $.fn[_pluginName] = plugin = function(options){
+        if (typeof options === "string") { // method call
+            var args = Array.prototype.slice.call(arguments, 1),
+                returnValue = this;
+
+            this.each(function() {
+
+                var instance = $.data(this, _pluginName);
+                var value = instance && $.isFunction(instance[options]) ?
+                        instance[options].apply(instance, args) : instance;
+
+                if (value !== instance && value !== undefined) {
+                    returnValue = value;
+                    return false;
+                }
+            });
+            return returnValue;
+        } else {
+            return this.each(function() {
+                var instance = $.data(this, _pluginName);
+                if (instance) {
+                    $.extend(true, instance.options, options);
+                    instance.init();
+                } else {
+                    $.data(this, _pluginName, new plugin.prototype.create(options, this));
+                }
+            });
+        }
+    };
+
+	plugin.prototype = {
+        options :{
+        	/** @type {string} */
+        	closeButton : false,
+
+        	/** @type {boolean} */
+        	visible : false,
+
+        	/** @type {string} */
+        	handleEventName:'click',
+
+			/** @type {boolean} ポジション自動調整 */
+            positioning:false,
+
+            /** @type {number} positioning:trueの時のオフセット*/
+            offsetX:0,
+            offsetY:0
+        },
+
+        /**
+         * 表示してたらtrue
+         * @type {boolean}
+         */
+        enabled:false,
+
+        /**
+         * 主要要素とプロパティ作成
+         * @param options {object} Plugin option
+         * @param element {object} HTML Element
+         */
+        create : function(options, element){
+            this.element = $(element);
+            this.elementId = this.element.attr('id') || 'dialog-' + String($.now()).slice(6, 10);
+            this.options = $.extend(true, {}, this.options, options);
+
+
+           var that = this;
+
+            if(this.options.closeButton){ //クローズボタン
+				this.$closeBtn = $('<button />', {'type':this.options.handleEventName, 'id':this.elementId+'-closebtn', 'class':'spg-button close','text':'x'});
+				//this.$closeBtn.on(this.options.handleEventName, function(){that.close();});
+				this.element.prepend(this.$closeBtn);
+			}
+
+            if(this.options.visible){
+            	this.show();
+            }else{
+            	this.hide();
+            }
+
+			if(this.options.positioning){
+	            this.wx = $(window).width();
+	            this.wy = $(window).height();
+	        }
+
+			//メニュー外クリックで消えるように
+			$(document.body).on(this.options.handleEventName, function(e){
+				var $target = $(e.target);
+				if(!$target.is('#'+that.elementId+'-closebtn')){
+
+					if( ! that.enabled
+						|| $target.attr('id') === that.elementId + '-button'
+					    || $target.closest('#' + that.elementId + '-button').length > 0
+						|| $target.closest('#' + that.elementId).length > 0){
+						return;
+					}
+				}
+
+				that.hide();
+
+				//今度直す＞＜
+				var href = $(e.target).closest('a').attr('href');
+				if(href && href !== '#'){
+            		if(href.indexOf('#') !== -1){
+            			window.location.hash = href.substr(1);
+            		}else{
+            			window.location.href = href;
+            		}
+            	}
+
+			}).on(this.options.handleEventName, '#' + this.elementId + ' a', function(e){
+				var href = $(this).attr('href');
+				that.hide();
+            	if(href !== '#'){
+            		if(href.indexOf('#') !== -1){
+            			window.location.hash = href.substr(1);
+            		}else{
+            			window.location.href = href;
+            		}
+            	}
+			});
+
+        	return this;
+        },
+
+        //initialize
+        init:function(){
+	       this.refresh();
+	       return this;
+        },
+
+        refresh:function(){
+
+        	this.setPosition();
+
+			this.element.trigger('refresh.dialog');
+			return this;
+        },
+
+        setPosition:function(){
+
+        	if(this.options.positioning){
+
+	            this.wx = $(window).width();
+	            this.wy = $(window).height();
+
+				var diffY = (this.wy - this.element.height())/2 + this.options.offsetX;
+				var diffX = (this.wx - this.element.outerWidth())/2 + this.options.offsetY;
+
+				this.element.css({
+					'top':diffY,
+					'left':diffX
+				});
+			}
+        	return this;
+        },
+
+        setContent:function(content, opt_where){
+
+			this.content = content;
+
+			if(opt_where){
+				switch(opt_where){
+					case 'top':
+						this.element.prepend(opt_content);
+					break;
+					default:
+						this.element.append(opt_content);
+					break;
+				}
+			}
+			return this;
+        },
+
+        show :function(opt_content, opt_where, opt_css){
+
+			if(opt_content){
+				this.setContent(opt_content, opt_where);
+			}
+
+			if(typeof opt_css === 'object'){
+				var css2;
+				this.wx = $(window).width();
+	            this.wy = $(window).height();
+				if(!opt_css.top){
+					css2 = {'top':(this.wy - this.element.height())/2 + this.options.offsetX};
+				}else if(!css.left){
+					css2 = {'left':(this.wx - this.element.outerWidth())/2 + this.options.offsetY};
+				}
+				this.element.css($.extend(true,{}, opt_css, css2)).show();
+
+			}else if(this.options.positioning){
+				this.setPosition();
+			}
+
+			if(this.options.closeButton){ //クローズボタン
+				this.$closeBtn.on('click', function(e){
+					e.preventDefault();
+					$(this).parent().dialog('close');
+					if ($('#modal-bg').css('display') === 'block' ) {
+						modalBg.close();
+					}
+					return false;});
+			}
+
+
+			var that = this;
+			setTimeout(function(){
+				that.enabled = true;
+				that = null;
+			}, 500);
+
+			this.element.show().trigger('show.dialog');
+
+			return this;
+
+		},
+
+		hide:function(){
+			this.element.hide();
+			if(this.options.closeButton){ //クローズボタン
+				this.$closeBtn.off('click');
+			}
+			this.enabled = false;
+			//this.element.trigger('hideDialog');
+			return this;
+		},
+
+		toggle : function(){
+
+			if(this.enabled){
+				this.close();
+			}else{
+				this.show();
+			}
+
+			return this;
+		},
+
+		close:function(opt_del){
+
+			if(opt_del){
+				$(this.content).remove();
+			}
+
+			this.hide();
+
+			this.element.trigger('close.dialog');
+			return this;
+		}
+    };
+
+    plugin.prototype.create.prototype = plugin.prototype;
+
+})(jQuery);

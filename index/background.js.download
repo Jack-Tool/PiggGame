@@ -1,0 +1,15 @@
+(function () {
+	var h = new Date().getHours();
+	var e = document.getElementsByTagName('html');
+	var c = '';
+
+	if (h >= 5 && h <= 16) {
+		c = 'noon';
+	} else if (h >= 17 && h <= 18) {
+		c = 'evening';
+	} else {
+		c = 'night';
+	}
+	
+	e[0].classList.add(c);
+})();

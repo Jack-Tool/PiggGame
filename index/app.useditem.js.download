@@ -1,0 +1,196 @@
+(function($){
+var app = window.app;
+
+/**
+ * 今着ている服（使用中のアイテム）にまつわるアレコレ
+ *
+ * 今着ている服のlocalStorage（json.used）操作
+ * 今着ている服のサムネイル作成
+ */
+app.model.useditem = Class.create({
+
+    initialize:function(config){
+
+        /** @type {app.config} */
+        this.config = app.config;
+
+        /** @type {app.options} */
+        this.options = app.options;
+
+    },
+
+    /**
+     * 使用中アイテムのJSON読み込み
+     * @private
+     */
+    loadUsedData:function(){
+        var self = this;
+        var defer = $.Deferred();
+        var query = this.options.query;
+        var options = this.options;
+        var config = this.config;
+
+        /**
+         * 最終着せ替え時間
+         * @type {(string|numeric)}
+         */
+        var dressuptime = app.util.loadCache(config.piggCode + '.dressuptime');
+
+        /**
+         * スマホでの最終アクセス時間
+         * @type {(string|numeric)}
+         */
+        var lastAccess = app.util.loadCache(config.piggCode + '.lastaccess');
+
+        this.trigger('usedLoadStart');
+
+        //PCでの着せ替え時間の方が新しい or スマホでのアクセス時間の方が新しいがキャッシュがない or 時間もキャッシュもない
+        if
+        (
+            navigator.onLine &&
+            (
+                (dressuptime > lastAccess )||
+                (dressuptime < lastAccess )||
+                (!dressuptime || !lastAccess)
+            )
+        )
+        {
+            app.util.removeChoice(config.piggCode);
+
+            $.ajax($.extend(true, {
+                    url:options.ajax.host + 'api/dressup/wearing',
+                    data:query
+                }, options.ajax)).then(
+
+                function(data){
+                    var item = app.util.sortUsed(data.itemlist.item);
+                    app.log.debug('usedDataLoadFinish.')
+                    app.util.saveCache(config.piggCode + '.json.used', JSON.stringify(item));
+                    return defer.resolve(item);
+                },
+                function (){
+                    self.trigger('usedDataLoadFailed');
+                    return defer.reject();
+                }
+            );
+        }
+        else
+        {
+            self.trigger('usedDataLoadFailed');
+            return defer.reject();
+        }
+        return defer.promise();
+    },
+
+    /**
+     * 使用中アイテムのキャッシュデータ削除
+     * @param code {string} item-code (obj.itemid + '_' + obj.uniqueid )
+     * @return {object} Class instance
+     */
+    removeUsedData : function(code){
+        if(code){
+            var array =  this.getUsedData();
+            for(var i = array.length; i--; ){
+                var c = array[i].itemid + '_' + array[i].uniqueid;
+                if(c === code){
+                    array.splice(i, 1);
+                }
+            }
+            app.util.removeChoice(this.config.piggCode, code);//localStorage['choice']削除
+            app.util.saveCache(this.config.piggCode + '.json.used', JSON.stringify(array));
+        }else{
+            app.util.removeCache(this.config.piggCode + '.json.used');
+            app.util.removeChoice(this.config.piggCode);//localStorage['choice']削除
+        }
+        return this;
+    },
+
+    /**
+     * 使用中アイテムのデータゲッター
+     * @return {Array}
+     */
+    getUsedData : function(){
+        var cache = $.parseJSON( app.util.loadCache(this.config.piggCode + '.json.used') ) || []
+        return cache;
+    },
+
+    /**
+     * 使用中アイテムのデータセッター
+     * @return {Object} this class instance
+     */
+    setUsedData : function(data){
+        var cache = this.getUsedData();
+        cache.push(data);
+        app.util.saveCache(this.config.piggCode + '.json.used', JSON.stringify(cache));
+        return this;
+    },
+
+    /**
+     * 使用中アイテムデータの置き変え
+     * @param data {Object}
+     * @return {Object} this class instance
+     */
+    replaceUsedData : function(data){
+        data = (typeof data !== 'string' || typeof data !== 'number') ? JSON.stringify(data):data;
+        app.util.saveCache(this.config.piggCode + '.json.used', data);
+        return this;
+    }
+});
+
+app.view.useditem = Class.create({
+
+	initialize:function(config){
+
+		/** @type {app.config} */
+		this.config = app.config;
+	},
+
+     /**
+	 * 今着ている服　サムネイル作成
+	 * @param data {object} JSON data
+	 * @return {boolean}
+	 */
+	createThumb:function(data){
+		/** @param {number} */
+		var count = data.length;
+
+        if(count === 0){
+        	this.trigger('createUsedThumbFinish', [null]);
+        	return false;
+        }
+
+        var $useditemList = $('#useditem-list');
+
+        for(var i = 0, max = count-1; i < count; i++ ){
+
+			var obj = data[i];
+			if(!obj){ continue; }
+
+            app.util.setChoice(this.config.piggCode, obj.code);//CODE保存
+
+			var li = app.util.createThumbnail(app.options.ajax.host + "/stat/dat/cosmetic/135/" + obj.code.slice(0, 2) + "/" + obj.code + ".png", {'data-code':obj.code});
+			li.data('obj', obj);
+
+			//アイテム脱がすイベントバインド
+			li.children().enableTap();
+
+			//今着ている服リストにアペンド
+			$useditemList.append(li);
+
+            if(i === max){
+				this.trigger('createUsedThumbFinish');
+	        }
+		}
+		return true;
+	},
+
+    createUl: function(){
+        $('#useditem-view').append($('<ul></ul>', {'id':'useditem-list'}));
+    },
+
+    emptyUsedView: function(){
+        $('#useditem-list').children().remove();//サムネイル削除
+    }
+
+});
+})(jQuery);

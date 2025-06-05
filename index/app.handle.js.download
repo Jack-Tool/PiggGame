@@ -1,0 +1,305 @@
+(function($){
+var app = window.app;
+
+app.handle = {
+
+    isRequestItemData: false,
+
+    /**
+     * 全部脱ぐ
+     * setTimeout使ってるのはiOSでダイアログが2回でる現象を回避するため
+     * @return {void}
+     */
+    takeoff : function(){
+        app.view.windowScroll();//スクロール
+        app.ClosetModel.cancel();//カテゴリーJSON読み込みキャンセル
+
+        setTimeout(function(){
+            app.util.createPopup('すべて外してもよろしいですか？', 'confirm');
+        },100)
+    },
+
+    /**
+     * 今着ている服
+     * @param how {string} [ show | hide ]
+     * @return {void}
+     * @private
+     */
+    _toggleUseditem:function(how){
+        switch(how){
+            case 'show':
+                $('#useditem-view').show();
+                break;
+            default:
+                $('#useditem-view').hide();
+                break;
+        }
+    },
+
+    /**
+     * 右上の今着ている服ボタンを押した時
+     * @return {void}
+     */
+    useitemshow:function(){
+        app.view.currentPage = 'main';
+        $('#useditem-itemname').text('今付けているコスメ');
+        app.view.windowScroll();//スクロール
+        app.handle._toggleUseditem('show');
+        $('#useditem-availableTime').hide();
+        $('#useditem-remaintime').hide();
+        $('#useditem-list > li').removeClass('remove');
+        $('#main').ajaxLoader('hide');//メッセージ非表示
+        app.ClosetView._hideCloset();//クローゼット隠す
+    },
+
+
+    /**
+     * 右上のアイテム一覧ボタンを押した時
+     * @return {void}
+     */
+    itemlistshow:function(){
+        app.view.windowScroll();//スクロール
+        app.handle._toggleUseditem('hide');
+        app.ClosetView._hideCloset();//クローゼット隠す
+    },
+
+    /**
+     * カテゴリーボタンを押した時のアイテムデータ読み込み
+     * @param {string} name Category name
+     * @caller app.router
+     * @param {boolean} force 強制読み込み
+     * @return {void}
+     */
+    selectCategory:function(e){
+        var name = e.className, force;
+        force = app.forceLoad;
+
+        app.view.currentPage = 'main';
+
+        $('#useditem-list .remove').removeClass('remove');//選択中の表示を消す
+
+        app.view.windowScroll();//スクロール
+        app.ClosetView._hideCloset();//クローゼット隠す
+
+        var $this = $('#category-' + name);
+        $('#main').ajaxLoader('show', $this.text() + '読み込み中…');
+
+        //続きが無くなるまで読み込んだか？フラグ
+        $this.data('loadmax', false).data('dataset',0);
+
+        $('#closet-box').data('cat', name);
+        $('#closet-scroller').data('title', $this.text());
+
+        app.ClosetModel.loadCategoryData(name, 0, force);
+    },
+
+    /**
+    * カテゴリー内アイテムサムネイル選択時
+    * $(this) == <button>
+    * @caller app.trigger.categoryLoadFinish
+    * @return {void}
+    */
+    itemSelect :function(e){
+        if (app.handle.isRequestItemData)
+            return;
+        app.handle.isRequestItemData = true;
+
+        var elem = $(this);
+        var name = elem.parent().data('obj').name;
+        var code = elem.parent().attr('data-code');
+        var remainTime = elem.parent().data('obj').remainTime;
+        var availableTime = elem.parent().data('obj').availableTime;
+
+        // 非対応パーツの場合
+        if (elem.parent().data('obj').applicable == false)
+        {
+            app.handle.isRequestItemData = false;
+            app.DressupView.hideAjaxLoader();
+
+            var alertStr;
+            if (elem.parent().data('obj').code.indexOf("eye") >= 0 || elem.parent().data('obj').code.indexOf("contact") >= 0)
+                alertStr = '目のパーツが非対応です。<br />他の目に変更すると表示されます。';
+            else
+                alertStr = '口のパーツが非対応です。<br />他の口に変更すると表示されます。';
+
+            app.util.createPopup(alertStr, 'hide');
+            return;
+        }
+
+        // 既にデータ取得済みの場合
+        if (app.DressupView.itemCache[code])
+        {
+            app.DressupView.onGetItemData(
+                elem,
+                name,
+                app.DressupView.itemCache[code],
+                remainTime,
+                availableTime
+            );
+
+            app.handle.isRequestItemData = false;
+            return;
+        }
+
+        app.DressupView.showAjaxLoader('コスメ読み込み中…');
+
+        $.ajax($.extend(true, {
+            url:app.options.ajax.host + 'api/dressup/cosmetic/parts?codes=' + code + '&scale=' + 2.2,
+
+            success:function(data){
+                app.handle.isRequestItemData = false;
+                app.DressupView.hideAjaxLoader();
+                app.DressupView.itemCache[code] = data.items;
+                app.DressupView.onGetItemData(elem, name, data.items, remainTime, availableTime);
+            },
+
+            error:function (){
+                app.handle.isRequestItemData = false;
+                app.DressupView.hideAjaxLoader();
+                return false;
+            }
+        }, app.options.ajax));
+	},
+
+    /**
+     * 今着ている服 サムネイルタップハンドラ
+     * $(this) == <button>
+     * @return {void}
+     */
+    usedItemThumb : function(e){
+        var parent = $(this).parent();
+        var o = parent.data('obj');
+        var code = o.code;
+        var $itemName = $('#useditem-itemname');
+
+        $itemName.text(o.name);//アイテム名表示
+
+        if($(this).hasClass('remove')){//削除選択済み
+            $('#closet-box').find('[data-code=' + code + ']').removeClass('selected');//選択中の表示を消す
+            $('#useditem-availableTime').hide();
+            $('#useditem-remaintime').hide();
+            app.DressupView.removeWear(code, o);//1着脱がす
+            app.UseditemModel.removeUsedData(code);//localStorage['json.used']['json.choice']削
+            app.util.removeCache(app.config.piggCode + '.coordinateId');
+            $itemName.text("");//アイテム名削除
+            parent.remove();//サムネ削除
+
+        }else{
+            app.DressupView.checkAvailableTime($('#useditem-availableTime'), o.availableTime);
+
+            if (o.expiredTime)
+                app.DressupView.checkRemainTime($('#useditem-remaintime'), o.expiredTime);
+            else if (o.remainTime)
+                app.DressupView.checkRemainTime($('#useditem-remaintime'), o.remainTime);
+            else
+                $('#useditem-remaintime').hide();
+
+            $('#useditem-list .remove').removeClass('remove');
+            $itemName.text(o.name);//アイテム名表示
+            $(this).addClass('remove');
+        }
+    },
+
+    /**
+     * カルーセルの矢印
+     * @param $parent {Object} jQuery Object
+     * @param current {number} current position number
+     * @param total {number} total page number
+     * @return {void}
+     */
+    arrows : function($parent, current, total){
+        var $prev = $('.prev', $parent);
+        var $next = $('.next', $parent);
+        var total = total - 1;
+
+        if(current === 0){
+            $prev.removeClass('enable');
+        }else{
+            $prev.addClass('enable');
+        }
+        if(current >= total){
+            $next.removeClass('enable');
+         }
+
+        if((total > 0) && (current !== total)){
+            $next.addClass('enable');
+        }
+
+        $prev = null;
+        $next = null;
+
+        return $parent;
+    },
+
+    /**
+     * ●○○
+     * @param id {string}  indicator element id
+     * @param index {number} enableにする要素のindex番号
+     * @return {void}
+     */
+    indicator:function(id, index){
+        $(id + ' > li').removeClass('enable').eq(index).addClass('enable');
+    },
+
+
+    /**
+     * 着せ替え保存ボタン
+     * @return {void}
+     */
+    enter : function(){
+        app.ClosetModel.cancel();//カテゴリーJSON読み込みキャンセル
+
+        modalBg.show();
+        var spin = {color : 'rgb(255,255,255)'};
+        $('#modal-bg').ajaxLoader({'id':'modal-loader',spinner:spin}).ajaxLoader('show','設定しています…');
+        app.DressupModel.showYesNoDialog();
+    },
+
+    decide : function(){
+        var wearFlg = $('#useditem-view #useditem-list li').length;
+        function getStampItemList(){
+            var coordeId = app.util.loadCache(app.config.piggCode + '.coordinateId'),
+                title;
+                if( coordeId !== null && coordeId !== void 0 ){
+                    if(app.coordinate.coordeTitle !== ''){
+                        title = app.coordinate.coordeTitle;
+                    }else{
+                        title = app.handle.getDefaultTitleVal();
+                    }
+                }else{
+                    title = app.handle.getDefaultTitleVal();
+                }
+            if(wearFlg <=0){
+                $('#coordinate-title').css('display','none');
+                $('#coordinate-wrap input').val(title);
+            } else {
+                $('#coordinate-title').css('display','block');
+                $('#coordinate-wrap input').val(title);
+                $('#coordinate-wrap input').one('focus',function(){
+                    $('#coordinate-wrap input').val('');
+                });
+            }
+        }
+
+        app.view.windowScroll();
+        getStampItemList();
+
+        window.location.hash = 'decide';
+    },
+
+    closetOpener : function (){
+        var flg = $('#view-container').attr('class') || 'hide';
+        if(flg == 'show'){
+            $('#view-container').removeClass('show');
+            $('#view-container').addClass('hide');
+        }
+        else if(flg == 'hide'){
+            $('#view-container').removeClass('hide');
+            $('#view-container').addClass('show');
+        }
+    }
+
+};
+
+
+})(jQuery);

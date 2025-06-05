@@ -1,0 +1,1034 @@
+(function(){
+
+    define(['jquery'], function($) {
+
+        var app = window.app;
+
+        (function() {
+            var templates = {};
+            $('script[type="text/x-jsrender"]').each(function() {
+                var tmpl = $(this);
+                templates[tmpl.attr('id').split('_')[0]] = tmpl.text();
+            });
+            $.templates(templates);
+        })();
+
+        app.model.dressup = Class.create({
+
+            initialize: function() {
+
+                /** @type {app.config} */
+                this.config = app.config;
+
+                /** @type {app.options} */
+                this.options = app.options;
+            },
+
+            showYesNoDialog:function() {
+                var self = this;
+
+                modalBg.show();
+                $('#modal-loader').remove();
+                var dialog = $($.render.yesNoDialog({}));
+                dialog.find('li').click(function() {
+                    modalBg.closeClickBindOff();
+                    var profileCheckValue = $('input#editprofile[name="editprofile"]:checked').val();
+                    self.checkSaveDecide(!!$(this).index(), profileCheckValue);
+                    $yesnoDialog = $('#messageArea');
+                    $yesnoDialog.empty().ajaxLoader({'id':'main-loader-dialog'}).ajaxLoader('show','設定しています…');
+                });
+                dialog.find('#confirm-close').click(function(){
+                    $('.yesNoDialogContainer').remove();
+                    modalBg.close();
+                });
+                dialog.find('#js-yesnoCompleteNext').click(function(){
+                    modalBg.close();
+                });
+                dialog.appendTo('body');
+                this.setRemovedFirstWearingItemsName();
+            },
+
+            // 着せ替え開始時にすでに着用していたが、今は外れているアイテム名を保存確認ウインドウに表示
+            setRemovedFirstWearingItemsName:function() {
+                $('#removeItemList').empty();
+
+                if(app.AvatarModel.removedFirstWearingItemNames.length < 1)
+                {
+                    $('#removeAlert').hide();
+                    $('#removeItemList').hide();
+                    return;
+                }
+
+                $('#removeAlert').show();
+                $('#removeItemList').show();
+
+                app.AvatarModel.removedFirstWearingItemNames.forEach(function(value) {
+                    $('#removeItemList').append('<li class="itemName">・' + value + '</li>');
+                });
+            },
+
+            //プロフィール画像に設定するにチェックが入っているか確認する
+            //resultにははいかいいえか
+            checkSaveDecide:function(result, profileCheck) {
+                if (result) {
+                    //はいを押した場合
+                    var choice = app.util.getChoice(app.util.getPiggCode());
+                    this.save(choice, app.util.getToken('dressup'), profileCheck);
+                } else {
+                    //いいえを押した場合
+                    $('.yesNoDialogContainer').remove();
+                    $('.cosmeCheckDialogContainer').remove();
+                    modalBg.close();
+                }
+            },
+
+            /**
+             * きせかえ保存
+             * @param data {string} uniqueidをアンダーバーで繋いだ文字列
+             * @param token {string} 保存用トークン
+             */
+            save:function(data, token, profileCheck){
+                var self = this;
+                var defer = $.Deferred();
+                var items = "";
+
+                var i,
+                    len = data.length;
+
+                for (i = 0; len > i; i++)
+                {
+                    if (i == 0)
+                        items = data[i];
+                    else
+                        items = items + "," + data[i];
+                }
+
+                /** @type {app.options} */
+                var options = app.options;
+
+                if( navigator.onLine){
+                    $.ajax($.extend(true, {
+                            url:options.ajax.host + 'api/dressup/cosmetic/save',
+                            data:{
+                                'items':items,
+                                'token':token
+                            }
+                        }, options.ajax)).then(
+                        function(data){
+                            self.trigger('dressupSaveCheck',[data, profileCheck]);
+                            return defer.resolve(data);
+                        },
+
+                        function (data){
+                            self.trigger('dressupSaveFailed', [data]);
+                            return defer.reject();
+                        });
+
+                }else{
+
+                    self.trigger('dressupSaveFailed');
+                    return defer.reject();
+                }
+
+                return defer.promise();
+            },
+            /**
+             * きせかえ保存完了
+             *
+             * body に  className=saved して完了画面にする
+             * @param event {Object} jQuery event object
+             * @param data {newToken:string, incentivePoint:number}　data.incentivePoint ＝　多分アメ
+             */
+            dressupSaveFinish: function(data, checkProfile){
+                app.util.setToken('dressup', data.newToken);
+                app.AvatarModel.firstWearingItems = app.util.getChoice(app.util.getPiggCode());
+                app.AvatarModel.removedFirstWearingItemNames = [];
+
+                // クローゼットを非表示にしカテゴリーのキャッシュを削除する
+                if ($('#view-container').hasClass('show'))
+                    $('#view-container').css('-webkit-animation-name', 'hide');
+                app.ClosetModel.categoryCache = {};
+                app.AvatarModel.firstWearingItems = [];
+                app.UseditemView.emptyUsedView();
+                app.AvatarModel.loadCosmeData().pipe(
+                    function(){
+                        app.AvatarModel.getUsedCosmeData();
+                    },
+                    function(e){
+                        return false;
+                    }
+                );
+
+                if(checkProfile == "true")
+                    this.postSetProfile(data);
+                else
+                    app.DressupView.dressupFinish(data);
+
+            },
+
+            postSetProfile: function(data){
+                var obj = data,
+                    $self = $(this);
+                app.log.info('setPforile');
+                // $('#main').removeClass('info').ajaxLoader('show','設定しています…');
+
+                if(navigator.onLine && !$(this).data('setting')){
+                    $.ajax($.extend(true, {
+                            url:app.options.ajax.host + 'dressup/profile',
+                            data:{
+                                'token':app.util.getToken('profile')
+                            }
+                        }, app.options.ajax)).then(
+
+                        function(data){
+                            app.util.setToken('profile', data.newToken);
+                            $self.trigger('sendSetProfile', [obj]);
+                        },
+                        function (){
+                            $self.trigger('errorSetProfile');
+
+                        });
+                }else{
+                    return false;
+                }
+            }
+
+        });
+
+        app.view.dressup = Class.create({
+            // アイテムコードをキーにデータを保持
+            itemCache: {},
+
+            // くわえアイテムを着用中か
+            hasKuwae: false,
+
+            initialize: function(avatarView,avatarModel) {
+                /** @type {app.options} */
+                this.options = app.options;
+
+                /**
+                 * @type {app.model.avatar}
+                 */
+                this.avatarModel = avatarModel;
+
+                this.avatarView = avatarView;
+
+                /**
+                 * アイテム画像
+                 * @type {(Object.<string, Object> | Object.<string, number>)}
+                 */
+                this.itemImages = {};
+
+                this.createHidePartsStatus();
+                this.createWearingCosmeStatus(false);
+            },
+
+            /**
+             * アバターのセッター
+             * @type {app.view.avatar}
+             */
+            setAvatar : function(avatarModel){
+                this.avatarModel = avatarModel;
+                this.createHidePartsStatus();
+                this.createWearingCosmeStatus(false);
+            },
+
+            /**
+             * 隠すパーツの管理
+             * 1以上の場合は非表示。0で表示
+             * @type {back_hairs:number, front_hairs:number, bottoms:number, tops:number, ss:number, areaonly:number, areaonlyTops:number, areaonlyBottoms:number, shadow:number}
+             */
+            createHidePartsStatus: function() {
+                if (!this.hideParts)
+                {
+                    this.hideParts = {
+                        'back_hairs':0,
+                        'front_hairs':0,
+                        'bottoms':0,
+                        'tops':0,
+                        'ss':0,
+                        'mouth':0,
+                        'cheek':0,
+                        'shadow':0,
+                        'eyebrow':0,
+                        'eyeline':0,
+                        'eyelash':0,
+                        'contact':0,
+                        'white':0,
+                        'skin':0,
+                        'eye':0,
+                        'nose':0
+                    };
+                }
+            },
+
+            /**
+             * パーツに紐づいた着用中のコスメアイテム情報
+             * @type {back_hairs:number, front_hairs:number, bottoms:number, tops:number, ss:number, areaonly:number, areaonlyTops:number, areaonlyBottoms:number, shadow:number}
+             */
+            createWearingCosmeStatus: function(isReset) {
+                if (!this.wearingCosmeItems || isReset)
+                {
+                    this.wearingCosmeItems = {
+                        'mouth':{},
+                        'eyebrow':{},
+                        'eyeline':{},
+                        'contact':{},
+                        'white':{},
+                        'skin':{},
+                        'eye':{},
+                        'eyelash':{},
+                        'shadow':{},
+                        'beard':{},
+                        'cheek':{},
+                        'nose':{}
+                    }
+                }
+            },
+
+            /**
+             * 初回の着せ替えアイテムをロードして表示する
+             * note: モデルから直接データを受け取っているので、この中では着せ替えアイテムをカウントアップしなくても良い
+             * @param data
+             * @returns {*}
+             */
+            addItems : function(data){
+                var defer = $.Deferred();
+                var count = data.length;
+
+                if(count === 0){
+                    app.log.debug('全裸');
+                    return this.trigger('addItemsFinish',[this.avatarView.get()]);
+                }
+
+                /** @type {function(Object, number, number, Object):Object} */
+                var process = function(obj, i, arg, self){
+                    if(!obj){
+                        return defer.reject();
+                    }
+                    /** @type {string} */
+                    var code = obj.itemid;
+
+                    var images = self._preloadImage(code, obj);
+                    self._setRemove(obj.removeitem, 'hide');
+                    // くわえアイテムを着用しているか保持
+                    if (code.indexOf("kuwae") > -1)
+                    {
+                        self.hasKuwae = true;
+                        var mouthCosmeStatus = self.wearingCosmeItems["mouth"];
+                        if (mouthCosmeStatus && mouthCosmeStatus.data)
+                            $('[data-code=' + mouthCosmeStatus.data.code + ']', self.avatarView.get()).hide();
+                    }
+
+                    self.toggleParts(); // 下着や髪の毛を隠す (くわえアイテムのために _appenItem より先に実行する必要がある)
+                    self._appendItem(images, ""); // 画像の追加
+
+                    if(i !== arg) {
+                        return defer.reject();
+                    }
+                    self.trigger('addItemsFinish', [self.avatarView.get()]);
+                    self = null;
+                    return defer.resolve();
+                };
+
+                app.util.duff(data, process, count, this);
+                process = null;
+                $('#main').ajaxLoader('hide');
+                return defer.promise();
+            },
+
+            /**
+             * 画像に付与するクラス名の生成
+             *  @param {Array} removeitem 脱がすパーツのキー配列
+             */
+            _getImageClassName:function(removeitem){
+                var optClass = 'itemParts';
+
+                if($.inArray('swim', removeitem) !== -1){
+                    optClass = 'swimParts';
+                }else if($.inArray('space', removeitem) !== -1){
+                    optClass = 'spaceParts';
+                }
+
+                return optClass;
+            },
+
+            /**
+             * パーツを隠す為のオブジェクト作成
+             *
+             * @param tag {(string|Array.<string>)} removeitem の値
+             * @param how {(string|null)} 'hide' or 'show' or null
+             */
+
+            _setRemove:function(removeitem, how){
+                var self = this;
+
+                /** @type {function(string, string):void} */
+                var _setter = function(tag, how){
+                    /** @type {boolean} */
+                    var showOrHide = (how === 'hide') ? false : ((how === 'show') ?  true : null);
+
+                    if (tag === 'showAllFacePart')
+                    {
+                        self.hideParts['eyebrow'] = 0;
+                        self.hideParts['eyeline'] = 0;
+                        self.hideParts['eyelash'] = 0;
+                        self.hideParts['contact'] = 0;
+                        self.hideParts['white'] = 0;
+                        self.hideParts['shadow'] = 0;
+                        self.hideParts['cheek'] = 0;
+                        self.hideParts['nose'] = 0;
+                        self.hideParts['skin'] = 0;
+
+                        if (self.hasKuwae == false)
+                            self.hideParts['mouth'] = 0;
+                    }
+                    else
+                    {
+                        self.hideParts[tag] += showOrHide? -1 : 1;
+
+                        // 目だったら下位パーツにもパラメータをセット
+                        if (tag == 'eye')
+                        {
+                            self.hideParts['eyeline'] += showOrHide? -1 : 1;
+                            self.hideParts['eyelash'] += showOrHide? -1 : 1;
+                            self.hideParts['contact'] += showOrHide? -1 : 1;
+                            self.hideParts['white'] += showOrHide? -1 : 1;
+                            self.hideParts['shadow'] += showOrHide? -1 : 1;
+                            self.hideParts['skin'] += showOrHide? -1 : 1;
+                        }
+                    }
+                };
+
+                if(typeof removeitem !== 'string' && removeitem.length > 0){
+
+                    for(var r = removeitem.length; r--; )
+                    {
+                        var tag = removeitem[r];
+                        _setter(tag, how);
+                    }
+                }else if(typeof removeitem === 'string'){
+                    _setter(removeitem, how);
+                }
+            },
+
+
+            /**
+             * removeitemで指定されたパーツの表示・非表示処理
+             * コスメアイテムは管理しない
+             */
+            toggleParts : function(){
+
+                var self = this;
+
+                /**
+                 * @param tag {string} removeitem の値
+                 * @param how {string} 'hide' or 'show' or null
+                 */
+                $.each(this.hideParts, function(tag, value){
+                    var showOrHide = (value > 0) ? false : true,
+                        c = '';
+
+                    switch(tag){
+                        case 'bottoms':
+                            $('.default_bottoms_new', self.avatarView.get()).toggle(showOrHide);
+                            break;
+                        case 'tops':
+                            $('.default_tops_new', self.avatarView.get()).toggle(showOrHide);
+                            break;
+                        case 'front_hairs':
+                            c = '.frontHair,.frontHairBack,.middleHair';
+                            if(self.hideParts.back_hairs > 0 && self.hideParts.front_hairs === 0){
+                                c = '.frontHair';
+                            }
+                            $(c, self.avatarView.get()).toggle(showOrHide);
+                            break;
+                        case 'back_hairs':
+                            c = '.backHair,.frontHairBack,.middleHair';
+
+                            if(self.hideParts.front_hairs > 0 && self.hideParts.back_hairs === 0){
+                                c = '.backHair';
+                            }
+                            $(c, self.avatarView.get()).toggle(showOrHide);
+                            break;
+                        case 'all':
+                            $('.default_bottoms_new,　.default_tops_new', self.avatarView.get()).toggle(showOrHide);
+                            break;
+                        case 'ss'://水着と宇宙服
+                            if(value !== 0){
+                                if(self.hideParts.front_hairs > 0 || self.hideParts.back_hairs > 0){
+                                    //キャップがある（顔以外全部）
+                                    $('.itemParts', self.avatarView.get('bodyAll')).toggle(showOrHide);
+                                }else{
+                                    //キャップがない
+                                    $('.itemParts', self.avatarView.get('body')).toggle(showOrHide);
+                                }
+                            }else{
+                                $('.itemParts', self.avatarView.get()).toggle(showOrHide);
+                            }
+                            break;
+                        case 'shadow': // アイシャドウ
+                            $('.bodyParts.eye.f_shadow', self.avatarView.get()).toggle(showOrHide);
+                            break;
+                        case 'cheek': // チーク
+                            $('.bodyParts.cheek', self.avatarView.get()).toggle(showOrHide);
+                            break;
+                        case 'mouth':
+                            $('.mouth', self.avatarView.get()).filter(function(i, o) {
+                                // くわえアイテムにより反映された口パーツは除く
+                                return $(o).data('code') === undefined;
+                            }).toggle(showOrHide);
+                            break;
+                        case 'eyebrow':
+                            $('.bodyParts.eyebrow', self.avatarView.get()).toggle(showOrHide);
+                            break;
+                        case 'eyeline':
+                            $('.bodyParts.f_eyeline', self.avatarView.get()).toggle(showOrHide);
+                            break;
+                        case 'eyelash':
+                            $('.bodyParts.f_eyelash', self.avatarView.get()).toggle(showOrHide);
+                            break;
+                        case 'contact':
+                            $('.bodyParts.f_contact', self.avatarView.get()).toggle(showOrHide);
+                            break;
+                        case 'white':
+                            $('.bodyParts.f_white', self.avatarView.get()).toggle(showOrHide);
+                            break;
+                        case 'skin':
+                            $('.bodyParts.f_skin', self.avatarView.get()).toggle(showOrHide);
+                            break;
+                        case 'nose':
+                            $('.bodyParts.nose', self.avatarView.get()).toggle(showOrHide);
+                            break;
+                        default :
+                            break
+                    }
+                });
+
+                return this;
+            },
+
+            /**
+             * 着せ替え用画像のプリロード兼作成
+             * 作った画像はitemImagesに入れておく。
+             *
+             * @param {string} code item-code (obj.itemid + '_' + obj.uniqueid )
+             * @param {Object} obj JSON object
+             *
+             * @return {Object} HTML image element(native)
+             */
+            _preloadImage : function(code, obj){
+                var that = this;
+
+                /** @param array {array} アイテムのパーツ画像についてのJSONデータ */
+                var array = obj.image;
+
+                /** @param removeitem {array} 脱がすパーツのキー配列*/
+                var removeitem = obj.removeitem;
+
+                this.itemImages[code] = [];
+
+                var optClass = this._getImageClassName(removeitem);
+
+                for(var j=0, jcount = array.length; j < jcount; j++){
+                    var image = array[j];
+                    var className = optClass;
+
+                    if(code.indexOf('watch') !== -1){
+                        image.part = image.part.replace(/(.+?_)back$/i,'$1front');
+                    }
+
+                    // 水着フラグなどにより削除しないため、くわえアイテムの口パーツは素体パーツ扱いにする
+                    if(code.indexOf('kuwae') !== -1 && image.part === 'f_mouth'){
+                        className = 'bodyParts mouth';
+                    }
+
+                    if (image.subPart)
+                    {
+                        var name = image.subPart.replace(/^\w_/,'');
+                        className = className + ' ' + name;
+                    }
+
+                    var img = app.util.createImage(image.part, className, code, image);
+
+                    this.itemImages[code].push(img);//画像を格納
+                    this.itemImages[code+'Num'] = jcount;//総数
+
+                    //読み込みが終わったらサムネイルのローディングを解除
+                    img.addEventListener('load', function(){
+                        var code = this.getAttribute('data-code');
+                        if(that.itemImages[code] && (that.itemImages[code+'Num'] === that.itemImages[code].length)){
+                            $('li[data-code='+code+']').removeClass('loading');
+                            delete that.itemImages[code+'Num'];
+                        }
+                    }, false);
+                }
+
+                return this.itemImages[code];
+            },
+
+            /**
+             * アイテムのパーツイメージをクリア
+             * @param code {string} item-code (obj.itemid + '_' + obj.uniqueid )
+             * @return {void}
+             */
+            _clearCacheImage:function(code){
+                if(code){
+                    delete this.itemImages[code];
+                }else{
+                    this.itemImages = {};
+                }
+            },
+
+
+            /**
+             * １つだけ脱ぐ
+             * @param {string} code item-code (obj.itemid + '_' + obj.uniqueid)
+             * @param {Object} obj JSON Object
+             * @return {void}
+             */
+            removeWear:function(code, obj){
+                this.addRemovedFirstWearingItem(code);
+                $('img[data-code=' + code + ']', this.avatarView.get()).remove();
+
+                this.removeWearingCosmeData(obj);
+                this._clearCacheImage(code);//パーツ画像のキャッシュ消す
+                this._setRemove(this.getRemoveParts(obj.image), 'show');
+                this.toggleParts();//下着や髪の毛を隠す
+            },
+
+            /**
+             * １つだけ着せる
+             * @param code {string} item-code (obj.itemid + '_' + obj.uniqueid)
+             * @param obj {category:string, image:Object, itemid:string, itemname:string, removeitem:Array, thumbnaildata:string, uniqueid:number, used:number}
+             */
+            addWear:function(code, obj){
+                var images = this._preloadImage(code, obj);//画像プリロード
+
+                // マジカルマウスだった場合、すでにくわえアイテムを着用していたら非表示にする
+                if (this.hasKuwae && obj.image[0] && obj.image[0].part.indexOf("mouth") > -1)
+                    $(images[0]).hide();
+
+                this.addWearingCosmeData(code, obj);
+                this._setRemove(this.getRemoveParts(obj.image), 'hide');
+                this._appendItem(images, obj.category);//画像追加
+                this.toggleParts();//下着や髪の毛を隠す
+            },
+
+            removeRemovedFirstWearingItem:function(code){
+                if (!$('#useditem-list').find('li[data-code=' + code + ']')[0])
+                    return;
+
+                var i,
+                    removedFirstWearingItemNames = app.AvatarModel.removedFirstWearingItemNames,
+                    len = removedFirstWearingItemNames.length;
+
+                for (i = 0; len > i; i++)
+                {
+                    if ($('#useditem-list').find('li[data-code=' + code + ']').data('obj').name == removedFirstWearingItemNames[i])
+                    {
+                        app.AvatarModel.removedFirstWearingItemNames.splice( i, 1 );
+                        break;
+                    }
+                }
+            },
+
+            addRemovedFirstWearingItem:function(code){
+                app.AvatarModel.firstWearingItems.forEach(function(value) {
+                    if (value == code && $('#useditem-list').find('li[data-code=' + code + ']')[0])
+                    {
+                        app.AvatarModel.removedFirstWearingItemNames.push(
+                            $('#useditem-list').find('li[data-code=' + code + ']').data('obj').name
+                        );
+                    }
+                });
+            },
+
+            getRemoveParts:function(images) {
+                var i,
+                    len = images.length,
+                    removeParts = [];
+                for (i = 0; len > i; i++)
+                {
+                    if (images[i].subPart)
+                        removeParts.push(images[i].subPart.replace(/^\w_/,''));
+                    else
+                        removeParts.push(images[i].part.replace(/^\w_/,''));
+                }
+
+                return removeParts;
+            },
+
+            addWearingCosmeData:function(code, obj) {
+                var i,
+                    status,
+                    len = obj.image.length;
+
+                for (i = 0; len > i; i++)
+                {
+                    if (obj.image[i].subPart)
+                        status = this.wearingCosmeItems[obj.image[i].subPart.replace(/^\w_/,'')];
+                    else
+                        status = this.wearingCosmeItems[obj.image[i].part.replace(/^\w_/,'')];
+
+                    // 同じパーツのコスメをすでに使用していたら外す
+                    if (status && status.data && status.data.code.length > 0)
+                        this.removeWearingCosmePart(status);
+
+                    // アイライン、コンタクト、白目、まつげ、アイシャドウだった場合、マジカルアイも外す
+                    if
+                    (
+                        obj.image[i].subPart &&
+                        this.isRemoveMagicaleye(obj.image[i].subPart)
+                    )
+                    {
+                        var eyeStatus = this.wearingCosmeItems["eye"];
+                        if (eyeStatus && eyeStatus.data)
+                            this.removeWearingCosmePart(eyeStatus);
+                    }
+
+                    // マジカルアイだった場合、アイライン、コンタクト、白目、まつげ、アイシャドウも外す
+                    if (code.indexOf('magicaleye') > -1 && code.indexOf('magicaleyebrow') == -1)
+                        this.onWearMagicaleye();
+
+                    if (status)
+                        status.data = obj;
+                }
+            },
+
+            // 着用時にマジカルアイを外すアイテムか判定
+            isRemoveMagicaleye: function(part) {
+                if
+                (
+                    part.indexOf("eyeline") > -1 ||
+                    part.indexOf("contact") > -1 ||
+                    part.indexOf("white") > -1 ||
+                    part.indexOf("eyelash") > -1 ||
+                    part.indexOf("shadow") > -1
+                )
+                {
+                    return true;
+                }
+            },
+
+            // マジカルアイ着用時処理
+            // アイライン、コンタクト、白目、まつげを外す
+            onWearMagicaleye: function() {
+                var eyelineStatus = this.wearingCosmeItems["eyeline"];
+                if (eyelineStatus && eyelineStatus.data)
+                    this.removeWearingCosmePart(eyelineStatus);
+
+                var contactStatus = this.wearingCosmeItems["contact"];
+                if (contactStatus && contactStatus.data)
+                    this.removeWearingCosmePart(contactStatus);
+
+                var whiteStatus = this.wearingCosmeItems["white"];
+                if (whiteStatus && whiteStatus.data)
+                    this.removeWearingCosmePart(whiteStatus);
+
+                var eyelashStatus = this.wearingCosmeItems["eyelash"];
+                if (eyelashStatus && eyelashStatus.data)
+                    this.removeWearingCosmePart(eyelashStatus);
+
+                var eyeShadowStatus = this.wearingCosmeItems["shadow"];
+                if (eyeShadowStatus && eyeShadowStatus.data)
+                    this.removeWearingCosmePart(eyeShadowStatus);
+            },
+
+            removeWearingCosmePart:function(status) {
+                this.addRemovedFirstWearingItem(status.data.code);
+                app.UseditemModel.removeUsedData(status.data.code);//localStorage['json.used']['json.choice']削除
+                $('#useditem-list').find('[data-code=' + status.data.code + ']').remove();//今着ている服のサムネ削除
+                var parent = $('#closet-scroller').find('[data-code=' + status.data.code + ']');
+                $(parent).find('.spg-touch').removeClass('selected');//クラス名外す
+                $('#closet-scroller').find('.choice').removeClass('choice');
+                app.util.removeCache(app.config.piggCode + '.coordinateId');
+                this.removeWear(status.data.code, status.data);
+            },
+
+            removeWearingCosmeData:function(obj) {
+                var i,
+                    status,
+                    len = obj.image.length;
+
+                for (i = 0; len > i; i++)
+                {
+                    if (obj.image[i].subPart)
+                        status = this.wearingCosmeItems[obj.image[i].subPart.replace(/^\w_/,'')];
+                    else
+                        status = this.wearingCosmeItems[obj.image[i].part.replace(/^\w_/,'')];
+
+                    if (status)
+                        status.data = null;
+                }
+            },
+
+            /**
+             * 全部脱ぐ
+             * @return {void}
+             */
+            removeAll : function(){
+                var elms =  $('img.cosmeParts', this.avatarView.get()),
+                    i,
+                    len = elms.length;
+
+                if (elms)
+                {
+                    for (i = 0; len > i; i++)
+                    {
+                        this.addRemovedFirstWearingItem( $(elms[i]).data('code') );
+                        $(elms[i]).remove();
+                    }
+                }
+
+                this._clearCacheImage(); // パーツ画像のキャッシュ消す
+                this._setRemove('showAllFacePart', 'show');
+                this.createWearingCosmeStatus(true);
+                this.toggleParts(); // 下着や髪の毛を隠す
+            },
+
+            /**
+             * アバターにアイテム（画像）追加
+             * @private
+             */
+            _appendItem:function(images, category){
+                if (images == null || images == undefined)
+                    return;
+
+                for (var i = images.length - 1; i >= 0; i--)
+                {
+                    var part = images[i].getAttribute('data-part');
+
+                    if (category.indexOf("cosme") > -1)
+                        images[i].className = images[i].className.replace('itemParts', 'cosmeParts') + ' ' + part;
+
+                    this.avatarView.appendImage(part, images[i]);
+                }
+            },
+
+            dressupDecide:function(event, data){
+                var $body = $(document.body);
+                app.util.setToken('dressup', data.newToken);
+
+                $('#category').dialog('close');
+
+                $body.addClass('decide');
+            },
+
+            dressupSaveCheck:function(event, data, profileCheck){
+
+                //エラー処理
+                var msg;
+                var img = 'OK';
+                var e = 'hide';
+                var status = data.status || '';
+                switch (status){
+                    case "failed.postDressup":
+                        msg = "グッピグ広場の投稿が失敗しました。\nリロードをしてからもう一度お試しください。";
+                        img = '更新する';
+                        e = 'reload';
+                        app.DressupModel.dressupSaveFinish(data, profileCheck);
+                        errorEvent(msg, img, e);
+                        break;
+                    case "makeup.error.nopossession":
+                    case "makeup.warn.expired":
+                        msg = "有効期限が切れているアイテムが含まれている可能性があります。\nリロードをしてからもう一度お試しください。";
+                        img = '更新する';
+                        e = 'reload';
+                        app.DressupModel.dressupSaveFinish(data, profileCheck);
+                        errorEvent(msg, img, e);
+                        break;
+                    default:
+                        app.DressupModel.dressupSaveFinish(data, profileCheck);
+                        break;
+                }
+
+                function errorEvent( msg, img, e ){
+                    $('#main').ajaxLoader('hide');
+                    $('#js-yesnoDialog').hide();
+                    app.util.createPopup(msg, e);
+                }
+            },
+
+            dressupSaveFailed: function(event, data){
+                $('#main').ajaxLoader('hide');
+                $('#js-yesnoDialog').hide();
+
+                if (!data || !data.responseText)
+                {
+                    app.util.createPopup('保存が出来ませんでした。<br />リロードをしてからもう一度お試しください。', 'reload');
+                    return;
+                }
+
+                var msg;
+                var img = '更新する';
+                var e = 'reload';
+                switch (data.responseText.message)
+                {
+                    case "makeup.error.nopossession":
+                    case "makeup.warn.expired":
+                        msg = "有効期限が切れているアイテムが含まれている可能性があります。\nリロードをしてからもう一度お試しください。";
+                        break;
+
+                    default:
+                        msg = "保存が出来ませんでした。\nリロードをしてからもう一度お試しください。";
+                        break;
+                }
+
+                errorEvent(msg, img, e);
+
+                function errorEvent( msg, img, e ){
+                    $('#main').ajaxLoader('hide');
+
+                    app.util.createPopup(msg, e);
+                }
+            },
+
+            dressupFinish: function(data){
+                window.scrollTo(0, 0);
+                $yesnoDialog = $('#messageArea');
+                $yesnoDialog.html('<p id="changeCompleteMessage">コスメの保存が完了しました</p>');
+                $('#yesnoNextBtn').show();
+                $('#js-normalTweetBtn').removeClass('hideBtn');
+                $('#js-yesnoDialog').css('height', '120px');
+                modalBg.closeClickBindOn();
+                window.scrollTo(0, 1);
+            },
+
+            sendSetProfile: function(e,data){
+                var profileImg = app.AvatarView.clone();
+                app.view.windowScroll();//スクロール
+                $('#main').ajaxLoader('hide');
+
+                $('#confirm-close').unbind(app.handleEventName).bind(app.handleEventName, function(e){
+                    $('#confirm').dialog('close');
+                    modalBg.close();
+                    $('#confirm-preview').empty();
+                });
+
+                $('.closeBtn').unbind(app.handleEventName).bind(app.handleEventName, function(e){
+                    $('#confirm').dialog('close');
+                    modalBg.close();
+                    $('#confirm-preview').empty();
+                });
+
+                $(document.body).removeClass('saved');
+
+                $('#confirm-preview').append(profileImg);
+                modalBg.options.closeCallBack = function(){app.DressupView.dressupFinish(data)};
+                modalBg.show();
+                $('#confirm-message').html('プロフィール画像に設定しました');
+                $('#confirm').dialog('show');
+            },
+
+            errorSetProfile: function(){
+                app.util.createPopup('プロフィール画像に設定出来ませんでした。<br />再読み込みしてからもう一度お試しください。', 'reload');
+                $('#main').ajaxLoader('hide');
+            },
+
+            onGetItemData :function(elm, itemName, data, remainTime, availableTime){
+                var code = data[0].code;
+                var parent = elm.parent();
+
+                if( ! elm.hasClass('selected') ){
+                    elm.addClass('selected');//「選択中」
+                    $('#closet-title').text(itemName);
+                    this.checkAvailableTime($('#closet-availableTime'), availableTime);
+                    this.checkRemainTime($('#closet-remaintime'), remainTime);
+                    $('#closet-scroller').find('.choice').removeClass('choice');
+                    app.util.removeCache(app.config.piggCode + '.coordinateId');
+                    app.DressupView.addWear(code, data[0]);//アバターに着せる
+                    app.UseditemModel.setUsedData(data[0]);//localStorage['json.used']追加
+                    app.util.setChoice(app.config.piggCode, code);//localStorage['choice']追加
+
+                    //使用中のリストへサムネイルのクローン追加
+                    data[0].name = itemName;
+                    data[0].expiredTime = remainTime;
+                    data[0].availableTime = availableTime;
+                    parent.clone()
+                        .data('obj', data[0])
+                        .children()
+                        .removeClass('selected')
+                        .end()
+                        .appendTo($('#useditem-list'))
+                        .enableTap();
+
+                    this.removeRemovedFirstWearingItem(code);
+
+                } else if(elm.hasClass('selected')){//アイテム選択やめる
+
+                    app.DressupView.removeWear(code, data[0]);//1着脱がす
+                    app.UseditemModel.removeUsedData(code);//localStorage['json.used']['json.choice']削除
+                    $('#closet-title').empty();//アイテム名を空に
+                    $('#closet-availableTime').hide();
+                    $('#closet-remaintime').hide();
+                    $('#useditem-list').find('[data-code=' + code + ']').remove();//今着ている服のサムネ削除
+                    elm.removeClass('selected');//クラス名外す
+                    $('#closet-scroller').find('.choice').removeClass('choice');
+                    app.util.removeCache(app.config.piggCode + '.coordinateId');
+                }
+            },
+
+            // 期限付きアイテムだったらヘッダーに有効期限をセット
+            checkAvailableTime: function(elm, time) {
+                if (time > -1)
+                    elm.text(this.getAvailableTime(time));
+                else
+                    elm.text(" 無期限");
+
+                elm.show();
+            },
+
+            // 有効期限をStringで返却
+            getAvailableTime: function(time) {
+                var hour = Math.floor(time / 3600);
+                var date = Math.floor(hour / 24);
+
+                if (date > 0)
+                    return " 有効期限" + date + "日間";
+                else if(hour > 0)
+                    return " 有効期限" + hour + "時間";
+                else
+                    return "";
+            },
+
+            // 期限付きアイテムだったらヘッダーに残り時間をセット
+            checkRemainTime: function(elm, time) {
+                if (time > 0)
+                {
+                    elm.text(this.getRemainTime(time));
+                    elm.show();
+                }
+                else
+                {
+                    elm.hide();
+                }
+            },
+
+            // 残り時間をStringで返却
+            getRemainTime: function(time) {
+                var hour = Math.floor(time / 3600000);
+                var date = Math.floor(hour / 24);
+
+                if (date > 0)
+                    return "開封中 残り" + date + "日";
+                else if(hour > 0)
+                    return "開封中 残り" + hour + "時間";
+                else if(hour < 1)
+                    return "開封中 残りわずか";
+                else
+                    return "";
+            },
+
+            showAjaxLoader: function(text) {
+                $('#main').ajaxLoader('show', text);
+            },
+
+            hideAjaxLoader: function() {
+                $('#main').ajaxLoader('hide');
+            }
+        });
+
+    });
+
+})();

@@ -1,0 +1,220 @@
+.shape-selector-container {
+    margin-top: 24px;
+}
+
+.hidden {
+    display: none !important;
+}
+
+.centered-slider {
+    width: 310px;
+    margin: 0 auto;
+}
+
+.slider-frame {
+    width: 420px;   
+    height: 208px;  
+    position: relative;
+    left: -50px; /* Center the frame */
+}
+
+
+/* Shared shape styles */
+.shapeSelector.face,
+.shapeSelector.eyebrow,
+.shapeSelector.eye,
+.shapeSelector.nose,
+.shapeSelector.mouth,
+.shapeSelector.frontHair,
+.shapeSelector.backHair,
+.shapeSelector.mole,
+.shapeSelector.beard,
+.shapeSelector.option {
+    margin-bottom: 32px;
+}
+
+/* Common shape options layout */
+.options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px; /* this adds space between all items */
+}
+
+
+/* For backward compatibility */
+.face-shapes,
+.eyebrow-shapes,
+.eye-shapes,
+.nose-shapes,
+.mouth-shapes,
+.frontHair-shapes,
+.backHair-shapes,
+.mole-shapes,
+.beard-shapes,
+.option-shapes {
+composes: options;
+}
+
+/* Each item block */
+.face-option,
+.eyebrow-option,
+.eye-option,
+.nose-option,
+.mouth-option,
+.frontHair-option,
+.backHair-option,
+.mole-option,
+.beard-option,
+.option-option {
+    width: 56px;
+    height: 56px;
+    margin: 6px;
+}
+
+.slider-nav {
+    margin-top: 8px;
+    /*text-align: center;*/
+}
+
+/* Optional styling for inputs & labels */
+.shapeSelector input[type="radio"] {
+    display: none;
+}
+
+.shapeSelector label {
+    border: 1px solid #ccc;
+    padding: 4px;
+    border-radius: 4px;
+    display: inline-block;
+    transition: border-color 0.2s ease;
+    margin: 6px 8px;  /* add horizontal spacing between labels */
+}
+
+.shapeSelector label:hover {
+    border-color: #999;
+}
+
+.shapeSelector input[type="radio"]:checked + label {
+    border-color: #3498db;
+    box-shadow: 0 0 5px #3498db;
+}
+
+/* Responsive behavior */
+@media (max-width: 600px) {
+    .slider-frame {
+        height: auto;
+    }
+
+    .options {
+        position: relative;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+}
+
+.shapeSelector label {
+    border: 1px solid #ccc;  /* light grey border */
+    padding: 4px;            /* small padding inside the border */
+    border-radius: 4px;      /* slightly rounded corners */
+    display: inline-block;   /* make sure padding & border apply nicely */
+    transition: border-color 0.2s ease;
+}
+
+.shapeSelector label:hover {
+    border-color: #999;      /* darker border on hover */
+}
+
+.shapeSelector input[type="radio"]:checked + label {
+    border-color: #3498db;   /* blue border when selected */
+    box-shadow: 0 0 5px #3498db;
+}
+
+
+#shapeSelectorContainer .shapeSelector {
+  display: none;
+}
+
+#face-shapes, #eyebrow-shapes, #eye-shapes, #nose-shapes, #mouth-shapes, #frontHair-shapes, #backHair-shapes, #mole-shapes, #beard-shapes, #option-shapes {
+  display: flex;
+  gap: 12px; /* better than margin-right on li */
+  overflow: hidden;
+}
+
+
+
+.face-option img, .eyebrow-option img, .eye-option img, .nose-option img, .mouth-option img, .frontHair-option img, .backHair-option img, .mole-option img, .beard-option img, .option-option img {
+  width: 48px;  /* slightly smaller than 56px container */
+  height: 48px; /* maintain square aspect */
+  object-fit: contain; /* ensures image fits without distortion */
+  display: block;  /* remove inline spacing */
+  margin: 4px auto; /* centers the image inside */
+  pointer-events: none; /* prevent weird clicks */
+}
+
+.face-option, .eyebrow-option, .eye-option, .nose-option, .mouth-option, .frontHair-option, .backHair-option, .mole-option, .beard-option, .option-option {
+  width: 60px;
+  height: 60px;
+  padding: 0;
+  margin: 0; /* let grid handle spacing */
+  box-sizing: border-box;
+}
+
+.face-option button, .eyebrow-option button, .eye-option button, .nose-option button, .mouth-option button, .frontHair-option button, .backHair-option button, .mole-option button, .beard-option button, .option-option button {
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.face-option label, .eyebrow-option label, .eye-option label, .nose-option label, .mouth-option label, .frontHair-option label, .backHair-option label, .mole-option label, .beard-option label, .option-option label {
+  width: 100%;
+  height: 100%;
+  display: block;
+  padding: 0;
+  margin: 0;
+  background: none;
+}
+
+.subHeader {
+    height: 27px;
+    padding: 0;
+    position: relative;
+    background: #000 !important;
+    background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA4AAAAOCAMAAAAolt3jAAAABlBMVEUZGRkAAADBXwd6AAAAJ0lEQVR42r3NsREAMAzCwPf+S6ewGy0QOg4QTrP65jTTpu6Uokx9eCkEAGPQa9PMAAAAAElFTkSuQmCC') !important;
+    background-size: 17px 17px !important;
+    color: #fff;
+    display: block;
+    align-items: center;
+    justify-content: space-between;
+}
+
+#search-content {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-right: 8px;
+}
+
+
+.search-img {
+    width: 18px;
+    height: 18px;
+    float: left;
+    margin: 0px 8px;
+    position: relative;
+    left: 10px;
+    top: 3px;
+}
+
+#closet-search-word {
+    border: none;
+    padding: 2px 6px;
+    font-size: 14px;
+    border-radius: 10px;
+    min-height: 15px;
+    top: 3px;
+}

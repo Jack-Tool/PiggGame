@@ -1,0 +1,111 @@
+.spg-slider-next {
+  position: relative;
+  left: 120%;
+  z-index: 2;
+  width: 15px;
+  height: 15px;
+  background: url('/index/img/common/btns/slider_next_arrow.png') no-repeat center ;
+  background-size: contain;
+  border: none;
+  cursor: pointer;
+}
+
+.spg-slider-next2 {
+  position: relative;
+  left: 117%;
+  z-index: 2;
+  width: 16px;
+  height: 16px;
+  background: url('/index/img/common/btns/slider_next2_arrow.png') no-repeat center;
+  background-size: contain;
+  border: none;
+  cursor: pointer;
+}
+
+.spg-slider-prev {
+  position: relative;
+  left: -30%;
+  z-index: 2;
+  width: 15px;
+  height: 15px;
+  background: url('/index/img/common/btns/slider_prev_arrow.png') no-repeat center;
+  background-size: contain;
+  border: none;
+  cursor: pointer;
+}
+
+.spg-slider-prev2 {
+  position: relative;
+  left: -50%;
+  z-index: 2;
+  width: 16px;
+  height: 16px;
+  background: url('/index/img/common/btns/slider_prev2_arrow.png') no-repeat center;
+  background-size: contain;
+  border: none;
+  cursor: pointer;
+}
+
+.slide-indicator {
+    font-weight: bold;
+    font-size: 14px;
+    margin: -20px auto;
+    text-align: center;
+    color: #333;
+}
+
+
+button:focus {
+  outline: none;
+}
+button:hover {
+  opacity: 0.8;
+}
+
+
+/* custom-part-list start*/
+/* Layout for the list */
+.custom-part-list {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+/* Make each button a square matching image size */
+.part-button {
+    display: block;
+    width: 70px;
+    height: 70px;
+    background-color: #f7f7f7;
+    border-radius: 8px;
+    background-repeat: no-repeat;
+    background-size: 70px 70px;
+    background-position: center;
+    text-indent: -9999px;
+    overflow: hidden;
+    border: solid 2px #ccc;
+    border-radius: 10px;
+
+}
+
+
+
+
+
+
+
+.part-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 8px;
+  gap: 12px;
+}
+
+.part-navigation button {
+  padding: 6px 12px;
+  cursor: pointer;
+}

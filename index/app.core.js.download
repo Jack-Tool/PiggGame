@@ -1,0 +1,430 @@
+/**
+ * Dressup core
+ *
+ * [main.js]
+ * +jquery.hashchange.min.js
+ * +json.min.js
+ * +jquery.spgmenu.js
+ * +jquery.cookie.min.js
+ * +jquery.ajaxloader.js
+ * +jquery.jqtap.js
+ * +jquery.dialog.js
+ * +mm.app.common.js
+ * +plugins.js
+ * +app.util.js
+ * +app.handle.js
+ * +app.trigger.js
+ *
+ * [class.js]
+ * +app.avatar
+ * +app.dressup
+ * +app.closet
+ * +app.useditem
+ *
+ * ボタンタップ時の動作
+ * data-setup="handle"　を要素に加えると
+ * data-handle="handleName" のvalueをメソッド名とみなし
+ * app.handle.js にある app.handle[handleName]を要素にonする。
+ *
+ * app.debug = trueでデバッグモード
+ *
+ */
+(function() {
+    //リロード対応
+    var hashGet = location.hash;
+
+    if( hashGet !== "")
+    {
+        location.hash = '';
+        location.href = '/dressup/cosme';
+    }
+
+    var app = window.app, classes;
+    libs = ['jquery',
+        '/js/common/jsrender.min.js',
+        '/js/common/jquery.hashchange.min.js',
+        '/js/common/json.min.js',
+        '/js/common/jquery.cookie.min.js',
+        '/js/common/jquery.spgmenu.min.js',
+        '/js/common/outerClick.js',
+        '/js/common/jquery.transitionAnimate.min.js',
+        '/js/common/jquery.ajaxloader.js',
+        '/js/common/jquery.jqtap.js',
+        '/js/common/jquery.dialog.js',
+        '/js/common/jquery.spg.headline.min.js',
+        '/js/common/mm.common.js',
+        '/js/common/modal.bg.min.js',
+        '/js/common/spg.common.js',
+        '/js/common/jquery.spg.slide.notification.min.js',
+        '/js/common/mm.app.common.js'];
+
+    if (app.debug)
+    {
+        libs.push( '/js/dressup/plugins.js', '/js/dressup/app.util.js', '/js/dressup/cosme/app.handle.js' );
+        classes = [ '/js/dressup/cosme/app.avatar.js','/js/dressup/cosme/app.dressup.js', '/js/dressup/cosme/app.closet.js', '/js/dressup/cosme/app.useditem.js' ];
+    }
+    else
+    {
+        libs.push( '/js/dressup/cosme/main.js' );
+        classes = [ '/js/dressup/cosme/class.js' ];
+    }
+
+    define(libs, function($) {
+
+        window.scrollTo(0,1);
+
+        //iScroll instance
+        app.mainScroll = null, app.closetScroll= null;
+
+        //セットアップ-------------------------------------------------------
+        app.view.addBodyClass();
+
+        var titles = [
+            {'name':'main', 'src':'', 'alt':'きせかえ'}
+        ];
+        //プリロード
+        app.view.preloadTitle(titles);
+
+        $('[data-setup]').each(function(i,el) {
+            var $el = $(el);
+            var setup = $el.attr('data-setup').split(',');
+            for(var i = 0, len = setup.length; i < len; i++){
+                switch(setup[i]){
+                    case 'handle':
+                        $el.on(app.handleEventName, app.handle[$el.attr('data-handle')]);
+                        break;
+                    case 'selectCat':
+                        $el.on(app.handleEventName, function(){
+                            app.handle[$el.attr('data-handle')](this);
+                        });
+                    case 'submit':
+                        $el.on('submit', function(){
+                            app.handle[$el.attr('data-handle')]();
+                            return false;
+                        });
+                        break;
+                }
+            }
+        });
+
+        $.jQTap({enableTap:false});
+
+        // キャッシュ削除
+        app.util.cCmds();
+
+        $('#main').ajaxLoader({'id':'main-loader'});
+
+        //スマホメニュー
+        $('#container').spgMenu();
+
+        /**
+         * ユーザーの情報
+         * @type {{ piggCode:string, from:string, appid:string}}
+         */
+        app.config.from    = app.from;
+        app.config.appid   = app.appid;
+
+        /**
+         * オプション
+         * @type {{wearTotal:number,direction:string, coordinateMax:number, ajax:{host:string},query:{limit:number,scale:number,thumb:number,crossDomain:boolean,dataType:string}}
+         */
+        app.options = {
+            wearTotal:0,
+            direction:'FL',
+            ajax:{
+                crossDomain:false,
+                cache:false,
+                dataType:'json',
+                host:window.location.protocol + '//' + window.location.host + '/'
+            },
+            query:{
+                limit:30,
+                scale:2.2,
+                thumb:135
+            }
+        };
+
+        if (app.config.piggCode === null)
+        {
+            app.util.createPopup('ログインからやり直してください', 'hide');
+            return;
+        }
+
+        require(classes, function() {
+
+            /** @type {window.app} */
+            var app = window.app;
+
+            app.piggloader.text('読み込み中');
+
+            var AvatarModel     = app.AvatarModel     = new app.model.avatar();
+            var AvatarView      = app.AvatarView      = new app.view.avatar(AvatarModel);
+            var DressupModel    = app.DressupModel    = new app.model.dressup();
+            var ClosetModel     = app.ClosetModel     = new app.model.closet();
+            var ClosetView      = app.ClosetView      = new app.view.closet();
+            var DressupView     = app.DressupView     = new app.view.dressup(AvatarView,AvatarModel);
+            var UseditemModel   = app.UseditemModel   = new app.model.useditem();
+            var UseditemView    = app.UseditemView    = new app.view.useditem();
+
+            //***** （；`・ω・）ｏ━ヽ_｡_･_ﾟ_･_フ))　アバター作るよ！　***/
+
+            /**
+             * ピグ作成
+             * 1. state読み込み
+             * 2. app.model.avatar.loadBodyData
+             * 3. app.view.avatar.createBody & app.view.avatar.ddUnderware
+             * 4. app.model.dressup.loadUsedData
+             * 5. app.model.dressup.addItems & toggleParts & app.view.usedlist.createThumb
+             */
+
+            function init()
+            {
+                AvatarModel.loadState().pipe(
+                    //state読み込み成功時
+                    function(state){
+                        app.log.info('state読み込み完了');
+                        return AvatarModel.loadBodyData(state);
+                    },
+                    //state読み込み失敗時
+                    function(e){
+                        if(e === false)
+                            return false;
+                        app.util.createPopup('ステータス読み込み中に<br />エラーが発生しました。<br />リロードを行う場合は<br />更新するボタンを押してください', 'reload');
+                        return false;
+                    }
+                ).pipe(
+                    //素体読み込み失敗時
+                    function(bd, ud, cd, old){
+                        app.log.info('素体data読み込み完了');
+                        return $.when(
+                            AvatarView.createBody(bd),//ボディ作成
+                            AvatarView.addUnderware(ud),//下着着せる
+                            AvatarView.addCosme(cd)//コスメつける
+                        );
+                    },
+                    //素体読み込み成功時
+                    function(e){
+                        if(e === false)
+                            return false;
+                        setTimeout(function(){
+                            app.util.createPopup('ピグの作成に失敗しました。<br />リロードを行う場合は0Kボタンを押してください。', 'reload');
+                        }, 0);
+                        return false;
+                    }
+                ).pipe(
+                    //下着アバター作成成功時
+                    function(){
+                        app.log.info('下着アバター作成完了');
+                        UseditemView.createUl();
+                        return UseditemModel.loadUsedData();
+                    },
+                    //下着アバター作成失敗時
+                    function(e){
+                        if(e === false)
+                            return false;
+                        app.util.createPopup('ピグの作成に失敗しました。<br />リロードを行う場合は0Kボタンを押してください。', 'reload');
+                        return false;
+                    }
+                ).pipe(
+                    //着ている服データ取得成功時
+                    function(){
+                        DressupView.addItems(UseditemModel.getUsedData())
+                        return AvatarModel.getUsedCosmeData();
+                    },
+                    //着ている服データ取得失敗時
+                    function(e){
+                        if(e === false)
+                            return false;
+                        app.util.createPopup('今着ている服の読み込みに<br />失敗しました。', 'reload');
+                        return false;
+                    }
+                )
+            }
+
+            function createSuccess(a)
+            {
+                if (!app.enabled)
+                {
+                    app.enabled = true;
+                    var $_preview = $('#preview');
+
+                    app.view.windowScroll();//スクロール
+
+                    //アバター(σ・∀・)σｹﾞｯﾂ!!
+                    $_preview.prepend(a).addClass('loaded');
+
+                    //アプリ用リロード関数上書き
+                    window.reloadPiggApp = app.handle.reload;
+
+                    //最終アクセス時間セット
+                    app.util.saveCache(app.config.piggCode + '.lastaccessCosme', $.now());
+
+                    //ローディング隠す
+                    app.piggloader.hide();
+                    $('#main').addClass('spg-current');
+
+                    $_preview = null;
+
+                    return true;
+                }
+            }
+
+            init();
+
+            /**
+             * trigger の割当
+             * 1.初回ロードに準ずるもの
+             * 2.カテゴリ読み込みに関するもの
+             *
+             */
+            // ピグに服を着せ終わりましたー
+            DressupView.on('addItemsFinish', function(e, a){
+                app.log.info('ピグに服を着せ終わりました');
+                createSuccess(a);
+            });
+
+            //カテゴリーアイテムJSON読み込み
+            ClosetModel.on('categoryLoadFinish', ClosetView.categoryLoadFinish);
+            ClosetModel.on('categoryLoadFailed', ClosetView.categoryLoadFailed);
+            ClosetModel.on('categoryLoadCancel', ClosetView.categoryLoadCancel);
+
+            //決定
+            DressupModel.on('dressupDecide', DressupView.dressupDecide);
+
+            //保存完了
+            DressupModel.on('dressupSaveCheck', DressupView.dressupSaveCheck);
+
+            //保存失敗
+            DressupModel.on('dressupSaveFailed', DressupView.dressupSaveFailed);
+
+            DressupModel.on('sendSetProfile', DressupView.sendSetProfile);
+
+            DressupModel.on('errorSetProfile', DressupView.errorSetProfile);
+
+
+            /**
+             * Dispatcher
+             */
+            var Dispatcher = new app.util.dispatcher();
+            Dispatcher.execute();
+
+            // home
+            Dispatcher.add('^(?:|#dressup)$', function () {
+                app.view.currentPage = 'main';
+                //ページ変更
+                app.view.changePage();
+                $('#pagewrapper').removeClass('nodata');
+            });
+
+            // home以外
+            Dispatcher.add('^#(?!dressup)(.+)$', function (match) {
+                app.view.currentPage = match[1];
+                $('#pagewrapper').removeClass('nodata');
+            });
+
+            // 今着ている服
+            Dispatcher.add('^#decide', function(match){
+                $(document.body).removeClass('saved').addClass('decide');
+                $('#main-loader').css('display','none');
+                $('h1.spg-pageTitle').empty().append('きせかえ保存');
+                modalBg.options.closeCallBack = '';
+                $('#modal-bg').hide();
+                $('#bonus-dialog').hide();
+                $('#welcomeCompletePanel').hide();
+                $('#spg-menu').removeClass('spg-menu-open');
+                $('#linkList').hide();
+            });
+
+            // きせかえ完了
+            Dispatcher.add('^#saved', function(match){
+                $(document.body).removeClass('decide').addClass('saved');
+                $('#main-loader').css('display','block');
+                $('h1.spg-pageTitle').empty().append('きせかえ完了');
+            });
+
+            /**
+             * hashchangeイベントにDispatcher登録
+             */
+            $(window).on('hashchange', function(){
+                Dispatcher.execute();
+            });
+
+            //イベントの監視
+            $('#closet-scroller').on(app.handleEventName, '.itemlist > li > .thumb', app.handle.itemSelect);
+            $('#useditem-view').on(app.handleEventName, 'li > .thumb', app.handle.usedItemThumb);
+            if('ontouchstart' in window){
+                $('#closet-scroller').on('mousedown',function(e){
+                    e.stopPropagation();
+                });
+            }
+            $('#closet-scroller').on('touchstart',function(e){
+                e.preventDefault();
+            });
+
+            //dialogを作成
+            $('#confirm').dialog();
+
+            //キーボード隠す
+            $('form').on('submit',function(e){
+                $(this).find('input[type=text]').blur();
+                return false;
+            })
+            $('#closet-button').on('click', function(e){
+                $('#view-container').css('-webkit-animation-name', 'hide');
+            })
+
+            $('#useitembtn').on('click', function(e){
+                //location.href = location.href + '#useditem';
+                $('#view-container').css('-webkit-animation-name', 'show');
+                $('#closet-box').css('display','none');
+                $('#useditem-view').css('display','block');
+            })
+
+            $('#view-container').bind('webkitAnimationEnd', function() {
+                app.handle.closetOpener();
+            });
+
+            $(document).on('click','.sliderItem .leftBox.on', function(){
+                ClosetView.leftMove();
+            });
+
+            $(document).on('click', '.sliderItem .rightBox.on', function(){
+                ClosetView.rightMove();
+            });
+
+            $(document).on('touchstart', '.feelChange li input', function(){
+                ClosetView.tapAnim(this);
+            });
+
+            /**
+             * 回転した時の処理
+             */
+            $(window).on(app.is.iDevice? 'orientationchange':'resize', function(){
+
+                /** @type {Object} jQuery Object カテゴリーアイテム*/
+                var $_itemlist = $('.itemlist');
+
+                if($_itemlist.length > 0){
+                    /** @type {Object} jQuery Object　カテゴリーアイテムのスクローラー*/
+                    var $_closetScroller = $('#closet-scroller');
+                    $_closetScroller.css('width', (window.innerWidth * $_itemlist.length));
+                    $_itemlist.css('width', window.innerWidth);
+                }
+
+                var refreshMainScroll = function(){
+                    var that = this;
+                    setTimeout(function(){
+                        that.options.onRefresh = null;
+                    }, 500);
+                };
+
+                if(app.closetScroll){
+                    app.closetScroll.on("scrollEnd", function() {
+                        refreshMainScroll();
+                    });
+                    app.closetScroll.refresh();
+                }
+            });
+        }); // require()
+    }); // define()
+})();

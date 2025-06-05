@@ -1,0 +1,55 @@
+(function(){
+    //クライアントID取得
+    var _clientid = document.getElementById('amb_footer_placeholder').getAttribute('data-ambclientid');
+    //token取得
+    var _token = document.getElementById('amb_footer_placeholder').getAttribute('data-ambtoken');
+    //バナー表示フラグ
+    var _isShowBanner = document.getElementById('amb_footer_placeholder').getAttribute('data-ambbanner') ? true : false;
+    //初期設定
+    AMB.configure({
+        clientId: _clientid,
+        token : _token
+    });
+    //認証
+    AMB.bootstrap();
+
+    //ヘッダ表示
+    AMB.header('#amb_header_placeholder',{});
+
+    //フッタ表示
+    AMB.footer('#amb_footer_placeholder', {
+        util: true,
+        actions: true,
+        banner: _isShowBanner,
+        category: 'community',
+        contentsType: 'pigg',
+        serviceModule: 'collapsed',
+        overrideUrls: {
+            inquiry: 'https://cs.ameba.jp/contact/?client_id=a250260e15df22d1c97cbd6a72e3e6c33494dc07fdf01a1ab43db53738170c8f',
+            help: 'http://helps.ameba.jp/'
+        }
+    });
+
+    //hashchangeによるtracking
+    window.addEventListener('hashchange', function(e){
+        var hash = location.hash.slice(1);
+        AMB.track.action({
+          name : 'page',
+          option : 'hashchange',
+          vars : {
+            var1 : location.pathname,
+            var2 : hash
+          }
+        });
+    }, false);
+
+    //ロード時にtracking
+    AMB.track.action({
+    	name : 'page',
+    	option : 'open',
+        vars : {
+          var1 : location.pathname
+        }
+     });
+
+})();

@@ -1,0 +1,466 @@
+/**
+ * @fileoverview 所有アイテムに関する処理をする
+ * closetModel, closetView
+ */
+
+(function($){
+    var app = window.app;
+
+    /**
+     * @class ClosertModel
+     * @type {Object}
+     */
+    app.model.closet = Class.create({
+
+        categoryCache: {},
+
+        initialize: function(config, options) {
+            /** @type {app.config} */
+            this.config = app.config;
+
+            /** @type {app.options} */
+            this.options = app.options;
+
+            /**
+             * XMLHttpRequest object
+             * @type {Object}
+             */
+            this.ajax = null;
+
+            /**
+             * 分割で読み込まれた回数
+             * @type {Object.<string,number>}
+             */
+            this.jsonLoadCount = {
+                'new':0,
+                'cosme_magicaleye':0,
+                'cosme_magicalmouth':0,
+                'cosme_magicaleyebrow':0,
+                'cosme_contact':0,
+                'cosme_cheek':0,
+                'etc':0
+            };
+        },
+
+        /**
+         * ajax通信の中止処理
+         */
+        cancel:function(){
+            if(this.ajax){
+                this.ajax.abort();
+                this.ajax = null;
+            }
+        },
+
+        /**
+         * カテゴリーJSONの分割ロード（
+         * offset から limit までを１ページとして換算する。
+         * JSONのキャッシュはlocalStorageに  [piggCode].json.[categoryname].[page] という命名規則で保存される
+         *
+         * @param  {string} name category key
+         * @param  {number} page ページ番号（start:0） [option]
+         * @param  {number} limit
+         * @param  {bool}   force 強制読み込み
+         * @return {object} jQuery Deferred Object
+         */
+        loadCategoryData : function(name, page, force){
+            /** @type {Object} */
+            var self = this;
+
+            page = (typeof page === 'number') ? page : this.jsonLoadCount[name];
+            app.data['categoryLoading'] = { name : name, page:page};
+
+            /** @type {Object} */
+            var options = this.options;
+
+            /** @type {Object} */
+            var defer = $.Deferred();
+
+            force = force || false;
+
+            /** @type {Object} JSON Object of Category(name) items */
+            var cache = $.parseJSON(self.categoryCache[name + "_" + page]);
+
+            var ajaxOptions = {};
+
+            if
+            (
+                !force &&
+                cache &&
+                (cache.length > 0)
+            )
+            {
+                this.trigger('categoryLoadFinish', [cache, name, page]);
+                return defer.resolve(cache);
+            }else if(navigator.onLine){
+                ajaxOptions = $.extend(true, { url:options.ajax.host + 'api/dressup/cosmetic/item?category=' + name }, options.ajax);
+            }else{
+                this.trigger('categoryLoadFailed', [null, name, page]);
+                return defer.reject();
+            }
+
+            this.ajax = $.ajax(ajaxOptions)
+                .then(
+                    function(json){
+                        /** @type {Array} */
+                        var data = [];
+
+                        /** @type {string} */
+                        var loadName = app.data.categoryLoading.name;
+
+                        /** @type {string} */
+                        var page = app.data.categoryLoading.page;
+
+                        if(navigator.onLine){
+                            if(json && typeof json === 'object' && json.items.length > 0){
+                                self.categoryCache[loadName + "_" + page] = JSON.stringify(json.items);
+                                data = json.items;
+                            }
+                            self.jsonLoadCount[loadName]++;
+                        }
+
+                        self.trigger('categoryLoadFinish', [data, loadName, page]);
+                        self.ajax = null;
+                        return defer.resolve([data]);
+                    },
+                    function (e){
+                        if(e.statusText === 'abort'){
+                            self.trigger('categoryLoadCancel', [e.status, null, null]);
+                            return defer.reject();
+
+                        }else{
+                            self.trigger('categoryLoadFailed', [e.status, null, null]);
+                            self.ajax = null;
+                            return defer.reject();
+                        }
+                    }
+                );
+
+            return defer.promise();
+        }
+    });
+
+    app.view.closet = Class.create({
+
+        initialize: function() {
+
+            /** @type {app.config} */
+            this.config = app.config;
+
+            /** @type {app.options} */
+            this.options = app.options;
+        },
+
+        /**
+         * カテゴリー内アイテム読み込み完了
+         *
+         * 1.サムネイルをULに収めてappend
+         * 2.サムネイルに選択イベントをbind
+         * 3.$closetScrollerにカテゴリーキーを保存
+         *
+         * エリア限定アイテムは data-pconly=1 になる
+         *
+         * @caller app.model.loadCategoryData
+         * @param event {Object} jQuery Event Object
+         * @param data {Object} JSON
+         * @param cat {string} category key
+         * @param dataset {number} page number
+         */
+        categoryLoadFinish:function(event, data, cat, dataset){
+
+            app.view.windowScroll();
+
+            /** @type {Array.<string>} 選択（着用）中のアイテムコード配列 */
+            var choice,
+                /** @type {number} １ページあたりに表示する数 */
+                itemNum;
+
+            choice = app.util.getChoice(app.config.piggCode);
+            itemNum = Number( $('#closet-box').attr('data-displayItemNum') );
+
+            /** @type {number} dataに含まれるオブジェクト数 */
+            var count			= data.length;
+
+            /** @type {number} ページ数の算出 */
+            var pageNum		  = app.data.closetPageNum = Math.ceil(count / itemNum);
+
+            /** @type {Object} jQuery Object*/
+            var $_closetScroller = $('#closet-scroller');
+
+            var $_nodata = $('#nodata');
+
+            var $_closetBody = $('#closet-body');
+
+            /** @type {Object} jQuery Object*/
+            var $_categoryBtn	= $('#category-' + cat);
+
+            /** @type {string} カテゴリー名*/
+            var title			= $_closetScroller.data('title');
+
+            /** @type {number} 読み込んだページ数 */
+            var dataPageNum	  = $_closetScroller.find('.itemlist').length || 0;
+
+            /** @type {number} ページ数の合計 */
+            var totalPageNum	 =  dataPageNum + pageNum;
+
+            /** @type {Object} jQuery Object*/
+            var $_closetNav	  = $('#closet-nav');
+
+            /** @type {Object} jQuery Object*/
+            var $_closetBox	  = $('#closet-box');
+            
+            var bodyWidth = $('body').innerWidth();
+
+            app.log.info(cat + ' categoryLoadFinish!');
+            app.log.info('choice? '+ choice);
+
+            $('#main').ajaxLoader('message', title + '読み込み中…', 'loading');
+            $('#closet-availableTime').hide();
+            $('#closet-remaintime').hide();
+            $('#closet-title').text(title).addClass(cat);//タイトルセット
+            $_nodata.css('display','none')
+            $_closetBody.css('display', 'block');
+
+            if(count > 0){
+                $_closetScroller.css('width', (bodyWidth * totalPageNum));
+                $_categoryBtn.data('dataset', dataset);//ボタンに記憶させる
+                $_closetScroller.data('cat', cat);
+
+                /**
+                 * カルーセルのページ作成
+                 * <ul.itemlist>
+                 */
+                for(var p = 0; p < pageNum; p++){
+                    var ul = $('<ul></ul>', {'class':'itemlist', 'data-page':(dataPageNum + p)}).css('width', bodyWidth);
+                    /** @type {number} 開始位置 */
+                    var start = itemNum * p;
+
+                    /** @type {number} 終了位置 */
+                    var end   = start + itemNum;
+                    end   = (end > count)? count : end;
+
+                    for(var i = start; i < end; i++){
+                        var li;
+
+                        li = app.ClosetView.createItemLi(data[i],cat,choice);
+
+                        ul.append(li);
+                        li = null;
+                    }//for
+
+                    $_closetScroller.append(ul);
+
+                }//page for
+
+                //カルーセルナビゲーション作成
+                if(dataset == 0) {
+                    app.util.createCarouselNav( $_closetNav, 'closet', totalPageNum);
+                    app.handle.arrows($_closetNav, 0, pageNum);
+                }else{
+                    //１ページだけだったら赤い●ひとつ
+                    for(var z = 0; z < pageNum; z++){
+                        $('.indicator', $_closetNav).append($('<li />',{'text':dataset + z}));
+                    }
+                }
+
+                $_closetBox.show();
+
+                //iScroll(create)
+                setTimeout(function(){
+                    app.util.setupClosetScroll();
+                },200)
+
+                $_closetNav.data('loading', false);
+
+            }else if(data.length === 0 && !dataset && (!app.closetScroll)){ //データ無し
+                var nodataflg = $_nodata.text();
+                if( nodataflg === '')
+                {
+                    $_nodata.append(
+                        '<p class="text">このカテゴリーのアイテムをもっていません</p>' +
+                        '<div id="nodata-btn"></div>'
+                    );
+                }
+
+                $_nodata.css('display','block');
+                $_closetBody.css('display', 'none');
+                $('#nodata-btn').empty().append('<button type="button" class="spg-button spg-orange"><a href="/shop/cosmetic"><img src="/img/dressup/dressup_cosme_nodata_btn_label.png" alt="アイテムを探す" width="77"></a></button>');
+            }else if(data.length === 0 && dataset > 0 && app.closetScroll.currentPage.pageX > 0){ //続きなし
+                $_categoryBtn.data('loadmax', true);//カテゴリーボタンに記憶させる
+            }
+
+            $('#main').ajaxLoader('hide');
+            $('#view-container').css('-webkit-animation-name', 'show');
+            $('#useditem-view').css('display','none');
+            $('#closet-box').css('display','block');
+            $_closetScroller =  $_closetNav = null;
+
+        }, //categoryLoadFinish
+
+        /**
+         * 通常アイテム用のcloset:liを生成
+         **/
+        createItemLi: function(data,cat,choice){
+            var options = this.options;
+            var obj = data;
+            obj = $.extend(obj, {'category':cat});//サムネに保存しとくオブジェクトにカテゴリ名を含める
+
+            var li, children;
+
+            /** @type {boolean} 着用中かどうか */
+            var isChoice = $.inArray(data.code, choice);
+            var src = options.ajax.host + "/stat/dat/cosmetic/135/" + data.code.slice(0, 2) + "/" + data.code + ".png";
+
+            //サムネイルつくって～～～
+            li = app.util.createThumbnail(src, {'data-code':data.code});
+            children = li.children();
+
+            // 個数(1個以上だった場合表示)
+            if (data.quantity > 0)
+                $(children).append('<p class="quantity">×' + data.quantity + '</p>');
+
+            // 期限付きアイコン表示
+            if (data.availableTime > -1 && cat.indexOf('magical') > -1)
+                $(children).append('<div class="icon time"></div>');
+
+            // 現在の目パーツに非対応の目周辺コスメだった場合
+            if (data.applicable == false)
+            {
+                // $(children).append('<p class="disable"><span>非対応</span></p>');
+                $(children).css('background','#eee');
+                // li.find('button').prop("disabled", true);
+            }
+
+            //choiceにあったらselectedにする
+            if(isChoice !== -1)
+                children.addClass('selected');
+
+            //アイテム選択処理のバインド(app.core.jsに移動)
+            children.enableTap();//.bind(app.handleEventName + '.itemselect', app.handle.itemSelect);
+            li.data('obj', obj);//選択時にusedDataを保存するための
+
+            return li;
+        },
+
+        /**
+         * 　カテゴリー内アイテム読み込みキャンセル
+         * @caller app.model.loadCategoryData
+         * @param status {number}
+         * @param cat {string} category key
+         * @param dataset {number} page number
+         */
+        categoryLoadCancel:function(status, cat, dataset){
+            $('#main').ajaxLoader('hide');
+        },
+
+        /**
+         * カテゴリー内アイテム読み込み失敗
+         * @caller app.model.loadCategoryData
+         * @param status {number}
+         * @param cat {string} category key
+         * @param dataset {number} page number
+         */
+        categoryLoadFailed:function(status, cat, dataset){
+            $('#main').ajaxLoader('hide');
+            app.util.createPopup('アイテムの読み込みに失敗しました', 'reload');
+        },
+
+
+        /**
+         * 持ち物のカルーセルがscrollEndした時
+         * @return {void}
+         */
+        categoryScrollEnd: function(trg){
+
+            /** @type {number} */
+            var current = trg.currentPage.pageX;
+
+            /** @type {Object} jQuery Object*/
+            var $_closetNav = $('#closet-nav');
+
+            /** @type {Object} jQuery Object*/
+            var $_closetScroller = $('#closet-scroller');
+
+            /** @type {number} */
+            var _pageNum = $_closetScroller.find('.itemlist').length;
+
+            /** @type {string} category name */
+            var cat = $_closetScroller.data('cat');
+
+            /** @type {Object} jQuery Object*/
+            var $_category = $('#category-' + cat);
+
+            app.log.info(cat + ' categoryScrollEnd...current page is ' + current);
+            app.log.debug('dataset:' + $_category.data('dataset') + ' loadmax:' + $_category.data('loadmax') + ' loading:' + $_closetNav.data('loading'));
+
+            app.handle.arrows($_closetNav, current, _pageNum);
+            app.handle.indicator('#closet-indicator', current);
+
+            $_closetNav = $_category = $_closetScroller = null;
+        },
+
+        /**
+         * クローゼット隠す
+         * @return {void}
+         * @private
+         */
+        _hideCloset : function(e){
+
+            var $_closetBox = $('#closet-box');
+            $_closetBox.hide();
+
+            var cat = $_closetBox.data('cat');
+
+            app.ClosetModel.cancel();//カテゴリーJSON読み込みキャンセル
+
+            if(app.closetScroll){
+                app.closetScroll.destroy();
+                app.closetScroll = null;
+            }
+
+            $('#closet-nav').data('pageNum',0).empty();
+            $('#closet-scroller').empty();
+
+            if(cat){
+                $('#closet-title').removeClass(cat);
+            }
+        },
+
+        leftMove: function(){
+            $('.stampSlide').css('-webkit-animation-name', 'slide');;
+            $('.leftBox .leftArrow').removeClass('on');
+            $('.rightBox .rightArrow').addClass('on');
+            $('.leftBox').removeClass('on');
+            $('.rightBox').addClass('on');
+            $('.stampSlide').on('webkitAnimationEnd', function(){
+                $('.stampSlide').removeClass('slide');
+            });
+        },
+
+        rightMove: function(){
+            $('.stampSlide').css('-webkit-animation-name', 'return');;
+            $('.leftBox .leftArrow').addClass('on');
+            $('.rightBox .rightArrow').removeClass('on');
+            $('.leftBox').addClass('on');
+            $('.rightBox').removeClass('on');
+            $('.stampSlide').on('webkitAnimationEnd', function(){
+                $('.stampSlide').addClass('slide');
+            });
+        },
+
+        tapAnim: function(targ){
+            $(targ).transitionAnimate({'-webkit-transform': 'scale(1.2)'},'100ms','ease-out',function(){
+                $(targ).transitionAnimate({'-webkit-transform': 'scale(1)'},'100ms','ease-out');
+            })
+        },
+
+        selectedOff: function(){
+            $('#closet-box').find('.selected').removeClass('selected');//選択中の表示を消す
+        },
+
+        selectedOn: function(key){
+            $('#closet-box').find('[data-code=' + key + ']').addClass('selected');
+        }
+    });
+
+})(jQuery);

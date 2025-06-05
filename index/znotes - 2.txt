@@ -1,0 +1,49 @@
+
+<div id="shapeSelectorContainer" class="shape-selector-container">
+< Face >
+<section class="shapeSelector face" data-part="face">
+   <h2>
+      <img src="/img/edit/selectorTitles/face.png" width="94px" height="15px">
+   </h2>
+   <div class="slider spg-slider-container centered-slider">
+      <div class="slider-frame">
+         <ul class="options spg-slider-target face-shapes" id="face-shapes">
+            <!-- This will be filled by JavaScript -->
+         </ul>
+         
+      </div>
+      <div class="spg-slider-menu slider-nav" data-part="face">
+         <button class="spg-slider-prev"></button>
+         <button class="spg-slider-next"></button>
+         <button class="spg-slider-prev2"></button>
+         <button class="spg-slider-next2"></button>
+         <div class="slide-indicator">1 / 1</div>
+      </div>
+   </div>
+</section>
+
+
+<!-- Eyebrow -->
+<section class="shapeSelector eyebrow" data-part="eyebrow">
+    <h2>
+        <img src="/img/edit/selectorTitles/eyebrow.png" width="94px" height="15px">
+    </h2>
+    <div class="slider spg-slider-container centered-slider">
+        <div class="slider-frame">
+            <ul class="options spg-slider-target eyebrow-shapes" id="eyebrow-shapes">
+                
+            </ul>
+        </div>
+        <div class="spg-slider-menu slider-nav" data-part="eyebrow">
+            <button class="spg-slider-prev"></button>
+            <button class="spg-slider-next"></button>
+            <button class="spg-slider-prev2"></button>
+            <button class="spg-slider-next2"></button>
+            <div class="slide-indicator">1 / 1</div>
+        </div>
+    </div>
+</section>
+
+
+
+
