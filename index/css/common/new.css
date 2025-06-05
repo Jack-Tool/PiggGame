@@ -4,7 +4,7 @@
   z-index: 2;
   width: 15px;
   height: 15px;
-  background: url('../index/img/common/btns/slider_next_arrow.png') no-repeat center ;
+  background: url('index/img/common/btns/slider_next_arrow.png') no-repeat center ;
   background-size: contain;
   border: none;
   cursor: pointer;
@@ -16,7 +16,7 @@
   z-index: 2;
   width: 16px;
   height: 16px;
-  background: url('../index/img/common/btns/slider_next2_arrow.png') no-repeat center;
+  background: url('index/img/common/btns/slider_next2_arrow.png') no-repeat center;
   background-size: contain;
   border: none;
   cursor: pointer;
@@ -28,7 +28,7 @@
   z-index: 2;
   width: 15px;
   height: 15px;
-  background: url('../index/img/common/btns/slider_prev_arrow.png') no-repeat center;
+  background: url('index/img/common/btns/slider_prev_arrow.png') no-repeat center;
   background-size: contain;
   border: none;
   cursor: pointer;
@@ -40,7 +40,7 @@
   z-index: 2;
   width: 16px;
   height: 16px;
-  background: url('../index/img/common/btns/slider_prev2_arrow.png') no-repeat center;
+  background: url('index/img/common/btns/slider_prev2_arrow.png') no-repeat center;
   background-size: contain;
   border: none;
   cursor: pointer;
